@@ -52,8 +52,20 @@ architecture twoproc of cpu_top is
 	end component;
 	signal alu_in : alu_pack.in_type := alu_pack.in_zero;
 	signal alu_out : alu_pack.out_type;
+	component fpu is
+		port(
+			clk, rst : in std_logic;
+			fpu_in : in fpu_pack.in_type;
+			fpu_out : out fpu_pack.out_type);
+	end component;
 	signal fpu_in : fpu_pack.in_type;
 	signal fpu_out : fpu_pack.out_type;
+	component mem is
+		port(
+			clk, rst : in std_logic;
+			mem_in : in mem_pack.in_type;
+			mem_out : out mem_pack.out_type);
+	end component;
 	signal mem_in : mem_pack.in_type;
 	signal mem_out : mem_pack.out_type;
 	signal branch_in : branch_pack.in_type;
@@ -99,6 +111,9 @@ architecture twoproc of cpu_top is
 			decode_result.opc := LDW_opc;
 		when x"E0" => --add
 			decode_result.opc := ADD_opc;
+			decode_result.rt := rt_rev1;
+			decode_result.ra := ra_rev1;
+			decode_result.rb := rb_rev1;
 		when x"E1" => --sub
 			decode_result.opc := SUB_opc;
 		when x"E2" => --and
@@ -132,7 +147,6 @@ architecture twoproc of cpu_top is
 	procedure read_regs(
 		decode_result : in decode_result_type;
 		regs : in register_array_type;
---		last_branch : in rs_num_type;
 		unit : out unit_type;
 		alu_rs : out alu_pack.rs_type;
 		fpu_rs : out fpu_pack.rs_type;
@@ -155,7 +169,6 @@ architecture twoproc of cpu_top is
 				ra => regs(ra_i),
 				rb => regs(rb_i),
 				state => RS_Waiting,
---				last_branch => last_branch,
 				result => (others => '0'),
 				rt_num => decode_result.rt
 			);
@@ -182,7 +195,12 @@ architecture twoproc of cpu_top is
 		if alu_cdb_out.tag.unit /= NULL_UNIT then
 			alu_grant := '1';
 			cdb := alu_cdb_out;
---		elsif
+		elsif fpu_cdb_out.tag.unit /= NULL_UNIT then
+			fpu_grant := '1';
+			cdb := fpu_cdb_out;
+		elsif mem_cdb_out.tag.unit /= NULL_UNIT then
+			mem_grant := '1';
+			cdb := mem_cdb_out;
 		else
 			cdb := cdb_zero;
 		end if;
@@ -190,6 +208,10 @@ architecture twoproc of cpu_top is
 begin
 	alu_l : alu
 	port map(clk => clk, rst => rst, alu_in => alu_in, alu_out => alu_out);
+	fpu_l : fpu
+	port map(clk => clk, rst => rst, fpu_in => fpu_in, fpu_out => fpu_out);
+	mem_l : mem
+	port map(clk => clk, rst => rst, mem_in => mem_in, mem_out => mem_out);
 	process(clk, rst)
 	begin
 		if rst = '1' then
@@ -201,6 +223,8 @@ begin
 	process(r, alu_out, fpu_out, mem_out, branch_out)
 		variable v : reg_type;
 		variable alu_in_v : alu_pack.in_type;
+		variable fpu_in_v : fpu_pack.in_type;
+		variable mem_in_v : mem_pack.in_type;
 		variable alu_rs_v : alu_pack.rs_type;
 		variable fpu_rs_v : fpu_pack.rs_type;
 		variable mem_rs_v : mem_pack.rs_type;
@@ -231,7 +255,6 @@ begin
 		read_regs(
 			decode_result => r.decode_result,
 			regs => v.registers,
---			last_branch => branch_out.last_branch,
 			unit => unit,
 			alu_rs => alu_rs_v,
 			fpu_rs => fpu_rs_v,
@@ -251,12 +274,27 @@ begin
 			when NULL_UNIT =>
 		end case;
 		alu_in_v.cdb_in := r.cdb;
+		fpu_in_v.cdb_in := r.cdb;
+		mem_in_v.cdb_in := r.cdb;
 		if not stall then
 			v.decode_result := decode_result_v;
 			v.pc := next_pc;
 			alu_in_v.rs_in := alu_rs_v;
+			fpu_in_v.rs_in := fpu_rs_v;
+			mem_in_v.rs_in := mem_rs_v;
 		end if;
+		cdb_arbiter(
+			alu_cdb_out => alu_out.cdb_out,
+			fpu_cdb_out => fpu_out.cdb_out,
+			mem_cdb_out => mem_out.cdb_out,
+			alu_grant => alu_in_v.cdb_next,
+			fpu_grant => fpu_in_v.cdb_next,
+			mem_grant => mem_in_v.cdb_next,
+			cdb => v.cdb
+		);
 		alu_in <= alu_in_v;
+		fpu_in <= fpu_in_v;
+		mem_in <= mem_in_v;
 		r_in <= v;
 	end process;
 end;

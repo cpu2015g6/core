@@ -18,12 +18,14 @@ architecture twoproc of alu is
 		rs_full : std_logic;
 		free_rs_num : rs_num_type;
 		cdb_out : cdb_type;
+		cdb_rs_num : rs_num_type;
 	end record;
 	constant reg_zero : reg_type := (
 		(others => rs_zero),
 		'0',
 		(others => '0'),
-		cdb_zero
+		cdb_zero,
+		(others => '0')
 	);
 	signal r, r_in : reg_type := reg_zero;
 	procedure find_free_rs(
@@ -33,6 +35,8 @@ architecture twoproc of alu is
 	begin
 	end find_free_rs;
 begin
+	alu_out.rs_full <= r.rs_full;
+	alu_out.free_rs_num <= r.free_rs_num;
 	process(clk, rst)
 	begin
 		if rst = '1' then
@@ -44,17 +48,63 @@ begin
 	process(alu_in, r)
 		variable v : reg_type;
 		variable exec_done : boolean;
+		variable ra_data : std_logic_vector(31 downto 0);
+		variable rb_data : std_logic_vector(31 downto 0);
 	begin
 		v := r;
-		exec_done := false;
+		-- update rs
 		for i in r.rs'range loop
-			if rs_common_ready(r.rs(i).common) and not exec_done then
+			v.rs(i).common.ra := register_update(r.rs(i).common.ra, alu_in.cdb_in);
+			v.rs(i).common.rb := register_update(r.rs(i).common.rb, alu_in.cdb_in);
+		end loop;
+		-- execute
+		exec_done := false;
+		for i in v.rs'range loop
+			if rs_common_ready(v.rs(i).common) and not exec_done then
+				ra_data := v.rs(i).common.ra.data;
+				rb_data := v.rs(i).common.rb.data;
+				case v.rs(i).op is
+					when ADD_op =>
+						v.rs(i).common.result := std_logic_vector(unsigned(ra_data) + unsigned(rb_data));
+					when others =>
+					-- TODO
+				end case;
+				v.rs(i).common.state := RS_Done;
 				exec_done := true;
 			end if;
 		end loop;
+		-- store new rs contents
 		if r.rs_full = '0' and alu_in.rs_in.op /= NOP_op then
 			v.rs(to_integer(unsigned(r.free_rs_num))) := alu_in.rs_in;
 		end if;
+		-- update output (cdb)
+		-- the second condition is usually not necessary
+		if alu_in.cdb_next = '1' and r.cdb_out.tag.unit = ALU_UNIT then
+			-- clear rs
+			v.rs(to_integer(unsigned(r.cdb_out.tag.rs_num))) := rs_zero;
+			-- select next rs for cdb
+			v.cdb_out := cdb_zero;
+			for i in v.rs'range loop
+				if v.rs(i).common.state = RS_Done then
+					v.cdb_out := (
+						tag => (
+							unit => ALU_UNIT,
+							rs_num => std_logic_vector(to_unsigned(i, rs_num_width))
+						),
+						reg_num => v.rs(i).common.rt_num,
+						data => v.rs(i).common.result
+					);
+				end if;
+			end loop;
+		end if;
+		-- update output (rs_full/free_rs_num)
+		v.rs_full := '1';
+		for i in v.rs'range loop
+			if v.rs(i).common.state = RS_Invalid then
+				v.free_rs_num := std_logic_vector(to_unsigned(i, rs_num_width));
+				v.rs_full := '0';
+			end if;
+		end loop;
 		r_in <= v;
 	end process;
 end;

@@ -135,6 +135,11 @@ package alu_pack is
 		free_rs_num : rs_num_type;
 		cdb_out : cdb_type;
 	end record;
+	constant out_zero : out_type := (
+		'0',
+		(others => '0'),
+		cdb_zero
+	);
 end alu_pack;
 
 library ieee;
@@ -151,8 +156,9 @@ package fpu_pack is
 		rs_common_zero
 	);
 	type in_type is record
-		rs_in : rs_common_type;
+		rs_in : rs_type;
 		cdb_in : cdb_type;
+		cdb_next : std_logic;-- set cdb_next = 1 when cdb_out is broadcasted
 	end record;
 	type out_type is record
 		rs_full : std_logic;
@@ -175,8 +181,9 @@ package mem_pack is
 		rs_common_zero
 	);
 	type in_type is record
-		rs_in : rs_common_type;
+		rs_in : rs_type;
 		cdb_in : cdb_type;
+		cdb_next : std_logic;-- set cdb_next = 1 when cdb_out is broadcasted
 	end record;
 	type out_type is record
 		rs_full : std_logic;
@@ -205,7 +212,6 @@ package branch_pack is
 	type out_type is record
 		rs_full : std_logic;
 		free_rs_num : rs_num_type;
---		last_branch : rs_num_type;
 		cdb_out : cdb_branch_type;
 	end record;
 end branch_pack;
