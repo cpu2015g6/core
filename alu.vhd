@@ -36,7 +36,6 @@ architecture twoproc of alu is
 	end find_free_rs;
 begin
 	alu_out.rs_full <= r.rs_full;
-	alu_out.free_rs_num <= r.free_rs_num;
 	process(clk, rst)
 	begin
 		if rst = '1' then
@@ -66,6 +65,16 @@ begin
 				case v.rs(i).op is
 					when ADD_op =>
 						v.rs(i).common.result := std_logic_vector(unsigned(ra_data) + unsigned(rb_data));
+					when SUB_op =>
+						v.rs(i).common.result := std_logic_vector(unsigned(ra_data) - unsigned(rb_data));
+					when AND_op =>
+						v.rs(i).common.result := ra_data and rb_data;
+					when OR_op =>
+						v.rs(i).common.result := ra_data or rb_data;
+					when XOR_op =>
+						v.rs(i).common.result := ra_data xor rb_data;
+					when NOT_op =>
+						v.rs(i).common.result := not ra_data;
 					when others =>
 					-- TODO
 				end case;
@@ -79,21 +88,24 @@ begin
 		end if;
 		-- update output (cdb)
 		-- the second condition is usually not necessary
-		if alu_in.cdb_next = '1' and r.cdb_out.tag.unit = ALU_UNIT then
+		if alu_in.cdb_next = '1' and r.cdb_out.tag.valid = '1' then
 			-- clear rs
-			v.rs(to_integer(unsigned(r.cdb_out.tag.rs_num))) := rs_zero;
+			v.rs(to_integer(unsigned(r.cdb_rs_num))) := rs_zero;
 			-- select next rs for cdb
 			v.cdb_out := cdb_zero;
 			for i in v.rs'range loop
 				if v.rs(i).common.state = RS_Done then
 					v.cdb_out := (
 						tag => (
-							unit => ALU_UNIT,
-							rs_num => std_logic_vector(to_unsigned(i, rs_num_width))
+							valid => '1',
+							rob_num => v.rs(i).common.rob_num
 						),
 						reg_num => v.rs(i).common.rt_num,
-						data => v.rs(i).common.result
+						data => v.rs(i).common.result,
+						reset => '0',
+						pc_restart => (others => '0')
 					);
+					v.cdb_rs_num := std_logic_vector(to_unsigned(i, rs_num_width));
 				end if;
 			end loop;
 		end if;
