@@ -12,7 +12,6 @@ entity alu is
 end alu;
 
 architecture twoproc of alu is
-	type rs_array_type is array (0 to 3) of rs_type;
 	type reg_type is record
 		rs : rs_array_type;
 		rs_full : std_logic;
@@ -63,6 +62,8 @@ begin
 				ra_data := v.rs(i).common.ra.data;
 				rb_data := v.rs(i).common.rb.data;
 				case v.rs(i).op is
+					when LIMM_op =>
+						v.rs(i).common.result := ra_data;
 					when ADD_op =>
 						v.rs(i).common.result := std_logic_vector(unsigned(ra_data) + unsigned(rb_data));
 					when SUB_op =>
@@ -75,10 +76,35 @@ begin
 						v.rs(i).common.result := ra_data xor rb_data;
 					when NOT_op =>
 						v.rs(i).common.result := not ra_data;
+					when EQ_op =>
+						if ra_data = rb_data then
+							v.rs(i).common.result := (others => '0');
+						else
+							v.rs(i).common.result := (others => '1');
+						end if;
+					when NEQ_op =>
+						if ra_data /= rb_data then
+							v.rs(i).common.result := (others => '0');
+						else
+							v.rs(i).common.result := (others => '1');
+						end if;
+					when GT_op =>
+						if signed(ra_data) < signed(rb_data) then
+							v.rs(i).common.result := (others => '0');
+						else
+							v.rs(i).common.result := (others => '1');
+						end if;
+					when GTE_op =>
+						if signed(ra_data) <= signed(rb_data) then
+							v.rs(i).common.result := (others => '0');
+						else
+							v.rs(i).common.result := (others => '1');
+						end if;
 					when others =>
 					-- TODO
 				end case;
 				v.rs(i).common.state := RS_Done;
+				v.rs(i).common.pc_next := std_logic_vector(unsigned(v.rs(i).common.pc) + 1);
 				exec_done := true;
 			end if;
 		end loop;
@@ -102,8 +128,7 @@ begin
 						),
 						reg_num => v.rs(i).common.rt_num,
 						data => v.rs(i).common.result,
-						reset => '0',
-						pc_restart => (others => '0')
+						pc_next => v.rs(i).common.pc_next
 					);
 					v.cdb_rs_num := std_logic_vector(to_unsigned(i, rs_num_width));
 				end if;

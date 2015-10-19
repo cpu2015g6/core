@@ -105,14 +105,17 @@ architecture twoproc of cpu_top is
 			decode_result.opc := LIMM_opc;
 			decode_result.rt := rt_rev1;
 			decode_result.imm := imm_rev1;
+		when x"D1" => --cmp
 		when x"D4" => --j
 			decode_result.opc := J_opc;
-		when x"D5" => --jz
-			decode_result.opc := JZ_opc;
+			decode_result.rt := rt_rev1;
+			decode_result.imm := imm_rev1;
 		when x"D6" => --jr
 			decode_result.opc := JR_opc;
 		when x"D8" => --stw
 			decode_result.opc := STW_opc;
+			decode_result.ra := ra_rev1;
+			decode_result.rb := rt_rev1;
 		when x"D9" => --ldw
 			decode_result.opc := LDW_opc;
 		when x"E0" => --add
@@ -240,7 +243,9 @@ architecture twoproc of cpu_top is
 			state => RS_Waiting,
 			result => (others => '0'),
 			rt_num => decode_result.rt,
-			rob_num => rob_num
+			rob_num => rob_num,
+			pc => decode_result.pc,
+			pc_next => (others => '0')
 		);
 		case decode_result.opc is
 		when LIMM_opc =>
@@ -252,7 +257,9 @@ architecture twoproc of cpu_top is
 				state => RS_Waiting,
 				result => (others => '0'),
 				rt_num => decode_result.rt,
-				rob_num => rob_num
+				rob_num => rob_num,
+				pc => decode_result.pc,
+				pc_next => (others => '0')
 			);
 		when ADD_opc =>
 			unit := ALU_UNIT;
@@ -263,16 +270,77 @@ architecture twoproc of cpu_top is
 			alu_rs.op := alu_pack.SUB_op;
 			alu_rs.common := rs_common_3;
 		when AND_opc =>
+			unit := ALU_UNIT;
+			alu_rs.op := alu_pack.AND_op;
+			alu_rs.common := rs_common_3;
 		when OR_opc =>
+			unit := ALU_UNIT;
+			alu_rs.op := alu_pack.OR_op;
+			alu_rs.common := rs_common_3;
 		when XOR_opc =>
+			unit := ALU_UNIT;
+			alu_rs.op := alu_pack.XOR_op;
+			alu_rs.common := rs_common_3;
 		when NOT_opc =>
 		when FADD_opc =>
 		when FMUL_opc =>
 		when J_opc =>
+			unit := BRANCH_UNIT;
+			branch_rs.op := branch_pack.J_op;
+			branch_rs.common := (
+				ra => (data => zext_imm, tag => rs_tag_zero),
+				rb => register_zero,
+				state => RS_Waiting,
+				result => (others => '0'),
+				rt_num => x"FF",
+				rob_num => rob_num,
+				pc => decode_result.pc,
+				pc_next => (others => '0')
+			);
 		when JZ_opc =>
+			unit := BRANCH_UNIT;
+			branch_rs.op := branch_pack.JZ_op;
+			branch_rs.common := (
+				ra => ra,
+				rb => (data => zext_imm, tag => rs_tag_zero),
+				state => RS_Waiting,
+				result => (others => '0'),
+				rt_num => x"FF",
+				rob_num => rob_num,
+				pc => decode_result.pc,
+				pc_next => (others => '0')
+			);
 		when JR_opc =>
+			unit := BRANCH_UNIT;
+			branch_rs.op := branch_pack.JR_op;
 		when NOP_opc =>
 			unit := NULL_UNIT;
+		when STW_opc =>
+			unit := MEM_UNIT;
+			mem_rs.op := mem_pack.STORE_op;
+			mem_rs.common := (
+				ra => ra,
+				rb => rb,
+				state => RS_Waiting,
+				result => (others => '0'),
+				rt_num => decode_result.rt,
+				rob_num => rob_num,
+				pc => decode_result.pc,
+				pc_next => (others => '0')
+			);
+		when LDW_opc =>
+			unit := MEM_UNIT;
+			mem_rs.op := mem_pack.LOAD_op;
+			mem_rs.common := (
+				ra => ra,
+				rb => register_zero,
+				state => RS_Waiting,
+				result => (others => '0'),
+				rt_num => decode_result.rt,
+				rob_num => rob_num,
+				pc => decode_result.pc,
+				pc_next => (others => '0')
+			);
 		when others =>
 		end case;
 	end read_regs;
@@ -309,11 +377,13 @@ architecture twoproc of cpu_top is
 		new_rob_array := rob_array;
 		rob_i := to_integer(unsigned(cdb.tag.rob_num));
 		if cdb.tag.valid = '1' then
-			new_rob_array(rob_i).result := cdb.data;
+			if cdb.reg_num /= x"FF" then
+				new_rob_array(rob_i).result := cdb.data;
+			end if;
 			new_rob_array(rob_i).state := ROB_Done;
-			if cdb.reset = '1' then
+			if cdb.pc_next /= rob_array(rob_i).pc_next then
 				new_rob_array(rob_i).state := ROB_RESET;
-				new_rob_array(rob_i).pc_restart := cdb.pc_restart;
+				new_rob_array(rob_i).pc_next := cdb.pc_next;
 			end if;
 		end if;
 	end update_ROB;
@@ -351,9 +421,7 @@ begin
 		v := r;
 		alu_in_v := alu_pack.in_zero;
 		-- update ROB
-		if r.cdb.tag.valid = '1' then
-			v.rob.rob_array(to_integer(unsigned(r.cdb.tag.rob_num))).result := r.cdb.data;
-		end if;
+		v.rob.rob_array := update_ROB(r.rob.rob_array, r.cdb);
 		-- decode instruction
 		inst_decode(
 			inst => r.program_memory(to_integer(unsigned(r.pc))),
@@ -402,8 +470,7 @@ begin
 			mem_in_v.rs_in := mem_rs_v;
 			v.rob.rob_array(to_integer(unsigned(r.rob.youngest))) := (
 				state => ROB_Executing,
---				pc_inst => r.decode_result.pc,
-				pc_restart => (others => '0'),
+				pc_next => r.decode_result.pc_predicted,
 				result => (others => '0'),
 				reg_num => r.decode_result.rt
 			);
@@ -423,17 +490,40 @@ begin
 		-- commit ROB
 		oldest_rob := v.rob.rob_array(to_integer(unsigned(v.rob.oldest)));
 		if oldest_rob.state = ROB_Done then
-			v.registers(to_integer(unsigned(oldest_rob.reg_num))) := (
-				data => oldest_rob.result,
-				tag =>rs_tag_zero
-			);
+			if oldest_rob.reg_num /= x"FF" then
+				v.registers(to_integer(unsigned(oldest_rob.reg_num))) := (
+					data => oldest_rob.result,
+					tag =>rs_tag_zero
+				);
+			end if;
 			v.rob.rob_array(to_integer(unsigned(v.rob.oldest))) := rob_zero;
 			v.rob.oldest := std_logic_vector(unsigned(v.rob.oldest) + 1);
 		elsif oldest_rob.state = ROB_Reset then
+			if oldest_rob.reg_num /= x"FF" then
+				v.registers(to_integer(unsigned(oldest_rob.reg_num))) := (
+					data => oldest_rob.result,
+					tag =>rs_tag_zero
+				);
+			end if;
+			for i in v.registers'range loop
+				v.registers(i).tag := rs_tag_zero;
+			end loop;
+			v := (
+				decode_result => decode_result_zero,
+				cdb => cdb_zero,
+				registers => v.registers,
+				pc => oldest_rob.pc_next,
+				program_memory => v.program_memory,
+				rob => rob_ring_buffer_zero,
+				state => CPU_NORMAL
+			);
+			-- reset other modules
+			-- TODO
 		end if;
 		alu_in <= alu_in_v;
 		fpu_in <= fpu_in_v;
 		mem_in <= mem_in_v;
+		branch_in <= branch_in_v;
 		r_in <= v;
 	end process;
 end;
