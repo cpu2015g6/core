@@ -72,6 +72,12 @@ architecture twoproc of cpu_top is
 			mem_in : in mem_pack.in_type;
 			mem_out : out mem_pack.out_type);
 	end component;
+	component branch is
+		port(
+			clk, rst : in std_logic;
+			branch_in : in branch_pack.in_type;
+			branch_out : out branch_pack.out_type);
+	end component;
 	signal mem_in : mem_pack.in_type;
 	signal mem_out : mem_pack.out_type;
 	signal branch_in : branch_pack.in_type;
@@ -386,6 +392,7 @@ architecture twoproc of cpu_top is
 				new_rob_array(rob_i).pc_next := cdb.pc_next;
 			end if;
 		end if;
+		return new_rob_array;
 	end update_ROB;
 begin
 	alu_l : alu
@@ -394,6 +401,8 @@ begin
 	port map(clk => clk, rst => rst, fpu_in => fpu_in, fpu_out => fpu_out);
 	mem_l : mem
 	port map(clk => clk, rst => rst, mem_in => mem_in, mem_out => mem_out);
+	branch_l : branch
+	port map(clk => clk, rst => rst, branch_in => branch_in, branch_out => branch_out);
 	process(clk, rst)
 	begin
 		if rst = '1' then

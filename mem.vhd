@@ -10,3 +10,6 @@ entity mem is
 		mem_out : out out_type);
 end mem;
 
+architecture twoproc of mem is
+begin
+end;
