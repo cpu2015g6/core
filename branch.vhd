@@ -28,6 +28,10 @@ architecture twoproc of branch is
 	);
 	signal r, r_in : reg_type := reg_zero;
 begin
+	branch_out <= (
+		rs_full => r.rs_full,
+		cdb_out => r.cdb_out
+	);
 	process(clk, rst)
 	begin
 		if rst = '1' then
@@ -52,16 +56,17 @@ begin
 			if rs_common_ready(v.rs(i).common) and not exec_done then
 				case v.rs(i).op is
 					when J_op =>
-						v.rs(i).common.pc_next := std_logic_vector(signed(v.rs(i).common.pc) + signed(v.rs(i).common.ra.data));
+						v.rs(i).common.pc_next := std_logic_vector(signed(v.rs(i).common.pc) + signed(v.rs(i).common.ra.data(pc_width-1 downto 0)));
 					when JZ_op =>
 						if v.rs(i).common.ra.data = (31 downto 0 => '0') then
-							v.rs(i).common.pc_next := std_logic_vector(unsigned(v.rs(i).common.pc) + unsigned(v.rs(i).common.rb.data));
+							v.rs(i).common.pc_next := std_logic_vector(signed(v.rs(i).common.pc) + signed(v.rs(i).common.rb.data(pc_width-1 downto 0)));
 						else
 							v.rs(i).common.pc_next := std_logic_vector(unsigned(v.rs(i).common.pc) + 1);
 						end if;
 					when JR_op =>
 					when others =>
 				end case;
+				v.rs(i).common.state := RS_Done;
 				exec_done := true;
 			end if;
 		end loop;
@@ -70,10 +75,11 @@ begin
 			v.rs(to_integer(unsigned(r.free_rs_num))) := branch_in.rs_in;
 		end if;
 		-- update output (cdb)
-		-- the second condition is usually not necessary
-		if branch_in.cdb_next = '1' and r.cdb_out.tag.valid = '1' then
+		if branch_in.cdb_next = '1' or r.cdb_out.tag.valid = '0' then
 			-- clear rs
-			v.rs(to_integer(unsigned(r.cdb_rs_num))) := rs_zero;
+			if r.cdb_out.tag.valid = '1' then
+				v.rs(to_integer(unsigned(r.cdb_rs_num))) := rs_zero;
+			end if;
 			-- select next rs for cdb
 			v.cdb_out := cdb_zero;
 			for i in v.rs'range loop

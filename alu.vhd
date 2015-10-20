@@ -34,7 +34,10 @@ architecture twoproc of alu is
 	begin
 	end find_free_rs;
 begin
-	alu_out.rs_full <= r.rs_full;
+	alu_out <= (
+		rs_full => r.rs_full,
+		cdb_out => r.cdb_out
+	);
 	process(clk, rst)
 	begin
 		if rst = '1' then
@@ -113,10 +116,11 @@ begin
 			v.rs(to_integer(unsigned(r.free_rs_num))) := alu_in.rs_in;
 		end if;
 		-- update output (cdb)
-		-- the second condition is usually not necessary
-		if alu_in.cdb_next = '1' and r.cdb_out.tag.valid = '1' then
+		if alu_in.cdb_next = '1' or r.cdb_out.tag.valid = '0' then
 			-- clear rs
-			v.rs(to_integer(unsigned(r.cdb_rs_num))) := rs_zero;
+			if r.cdb_out.tag.valid = '1' then
+				v.rs(to_integer(unsigned(r.cdb_rs_num))) := rs_zero;
+			end if;
 			-- select next rs for cdb
 			v.cdb_out := cdb_zero;
 			for i in v.rs'range loop

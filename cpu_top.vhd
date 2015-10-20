@@ -45,7 +45,14 @@ architecture twoproc of cpu_top is
 		cdb_zero,
 		register_array_zero,
 		(others => '0'),
-		(others => (others => '0')),
+--		(others => (others => '0')),
+		(
+			0 => x"d0010080",
+			1 => x"d0020080",
+			2 => x"e0030102",
+			3 => x"d4fffffd",
+			others => (others => '0')
+		),
 		rob_ring_buffer_zero,
 		CPU_NORMAL
 	);
@@ -90,7 +97,7 @@ architecture twoproc of cpu_top is
 	begin
 		case decode_result.opc is
 		when J_opc =>
-			next_pc := std_logic_vector(signed(pc) + signed(decode_result.imm));
+			next_pc := std_logic_vector(signed(pc) + signed(decode_result.imm(pc_width-1 downto 0)));
 		when others =>
 			next_pc := std_logic_vector(unsigned(pc) + 1);
 		end case;
@@ -476,19 +483,29 @@ begin
 		alu_in_v.cdb_in := r.cdb;
 		fpu_in_v.cdb_in := r.cdb;
 		mem_in_v.cdb_in := r.cdb;
+		branch_in_v.cdb_in := r.cdb;
 		if not stall then
 			v.decode_result := decode_result_v;
 			v.pc := next_pc;
 			alu_in_v.rs_in := alu_rs_v;
 			fpu_in_v.rs_in := fpu_rs_v;
 			mem_in_v.rs_in := mem_rs_v;
-			v.rob.rob_array(to_integer(unsigned(r.rob.youngest))) := (
-				state => ROB_Executing,
-				pc_next => r.decode_result.pc_predicted,
-				result => (others => '0'),
-				reg_num => r.decode_result.rt
-			);
-			v.rob.youngest := std_logic_vector(unsigned(r.rob.youngest) + 1);
+			branch_in_v.rs_in := branch_rs_v;
+			if r.decode_result.opc /= NOP_opc then
+				v.rob.rob_array(to_integer(unsigned(r.rob.youngest))) := (
+					state => ROB_Executing,
+					pc_next => r.decode_result.pc_predicted,
+					result => (others => '0'),
+					reg_num => r.decode_result.rt
+				);
+				if r.decode_result.rt /= x"FF" then
+					v.registers(to_integer(unsigned(r.decode_result.rt))).tag := (
+						valid => '1',
+						rob_num => r.rob.youngest
+					);
+				end if;
+				v.rob.youngest := std_logic_vector(unsigned(r.rob.youngest) + 1);
+			end if;
 		end if;
 		cdb_arbiter(
 			alu_cdb_out => alu_out.cdb_out,

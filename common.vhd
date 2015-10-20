@@ -165,6 +165,10 @@ package fpu_pack is
 		rs_full : std_logic;
 		cdb_out : cdb_type;
 	end record;
+	constant out_zero : out_type := (
+		'0',
+		cdb_zero
+	);
 end fpu_pack;
 
 library ieee;
@@ -190,6 +194,10 @@ package mem_pack is
 		rs_full : std_logic;
 		cdb_out : cdb_type;
 	end record;
+	constant out_zero : out_type := (
+		'0',
+		cdb_zero
+	);
 end mem_pack;
 
 library ieee;
@@ -215,5 +223,9 @@ package branch_pack is
 		rs_full : std_logic;
 		cdb_out : cdb_type;
 	end record;
+	constant out_zero : out_type := (
+		'0',
+		cdb_zero
+	);
 end branch_pack;
 
