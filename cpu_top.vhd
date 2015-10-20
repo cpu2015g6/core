@@ -222,16 +222,21 @@ architecture twoproc of cpu_top is
 			return reg;
 		end if;
 	end read_reg;
+-- http://japan.xilinx.com/support/answers/23475.html
+	alias alu_rs_type is alu_pack.rs_type;
+	alias fpu_rs_type is fpu_pack.rs_type;
+	alias mem_rs_type is mem_pack.rs_type;
+	alias branch_rs_type is branch_pack.rs_type;
 	procedure read_regs(
 		decode_result : in decode_result_type;
 		regs : in register_array_type;
 		rob_array : in rob_array_type;
 		rob_num : in rob_num_type;
 		unit : out unit_type;
-		alu_rs : out alu_pack.rs_type;
-		fpu_rs : out fpu_pack.rs_type;
-		mem_rs : out mem_pack.rs_type;
-		branch_rs : out branch_pack.rs_type) is
+		alu_rs : out alu_rs_type;
+		fpu_rs : out fpu_rs_type;
+		mem_rs : out mem_rs_type;
+		branch_rs : out branch_rs_type) is
 	variable ra, rb : register_type;
 	variable rs_common_3 : rs_common_type;
 	variable zext_imm : std_logic_vector(31 downto 0);
