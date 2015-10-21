@@ -47,10 +47,25 @@ architecture twoproc of cpu_top is
 		(others => '0'),
 --		(others => (others => '0')),
 		(
-			0 => x"d0010080",
-			1 => x"d0020080",
-			2 => x"e0030102",
-			3 => x"d4fffffd",
+--			0 => x"d0010080",
+--			1 => x"d0020080",
+--			2 => x"e0030102",
+--			3 => x"d4fffffd",
+			0 => x"d0000005",
+			1 => x"d0010000",
+			2 => x"d0020001",
+			3 => x"d0030001",
+			4 => x"d4100009",
+			5 => x"d0100001",
+			6 => x"e0010110",
+			7 => x"d1040100",
+			8 => x"f31004ff",
+			9 => x"e0040203",
+			10 => x"e30203ff",
+			11 => x"e30304ff",
+			12 => x"d4fffff9",
+			13 => x"d51010ff",
+			14 => x"d4020000",
 			others => (others => '0')
 		),
 		rob_ring_buffer_zero,
@@ -119,18 +134,32 @@ architecture twoproc of cpu_top is
 			decode_result.rt := rt_rev1;
 			decode_result.imm := imm_rev1;
 		when x"D1" => --cmp
+			decode_result.opc := CMP_opc;
+			decode_result.rt := rt_rev1;
+			decode_result.ra := ra_rev1;
+			decode_result.rb := rb_rev1;
+		when x"D2" => --in
+			decode_result.opc := IN_opc;
+			decode_result.rt := rt_rev1;
+		when x"D3" => --out
+			decode_result.opc := LIMM_opc;
+			decode_result.ra := rt_rev1;
 		when x"D4" => --j
 			decode_result.opc := J_opc;
 			decode_result.rt := rt_rev1;
 			decode_result.imm := imm_rev1;
-		when x"D6" => --jr
+		when x"D5" => --jr
 			decode_result.opc := JR_opc;
+			decode_result.rt := rt_rev1;
+			decode_result.ra := ra_rev1;
 		when x"D8" => --stw
 			decode_result.opc := STW_opc;
 			decode_result.ra := ra_rev1;
 			decode_result.rb := rt_rev1;
 		when x"D9" => --ldw
 			decode_result.opc := LDW_opc;
+			decode_result.ra := ra_rev1;
+			decode_result.rt := rt_rev1;
 		when x"E0" => --add
 			decode_result.opc := ADD_opc;
 			decode_result.rt := rt_rev1;
@@ -161,33 +190,43 @@ architecture twoproc of cpu_top is
 			decode_result.rt := rt_rev1;
 			decode_result.ra := ra_rev1;
 			decode_result.rb := rb_rev1;
-		when x"E6" => --shl
-			decode_result.opc := SHL_opc;
+		when x"E6" => --sll
+			decode_result.opc := SLL_opc;
 			decode_result.rt := rt_rev1;
 			decode_result.ra := ra_rev1;
 			decode_result.rb := rb_rev1;
-		when x"E7" => --shr
-			decode_result.opc := SHR_opc;
+		when x"E7" => --srl
+			decode_result.opc := SRL_opc;
 			decode_result.rt := rt_rev1;
 			decode_result.ra := ra_rev1;
 			decode_result.rb := rb_rev1;
-		when x"F0" => --eq
-			decode_result.opc := EQ_opc;
+		when x"F0" => --jreq
+			decode_result.opc := JREQ_opc;
 			decode_result.rt := rt_rev1;
 			decode_result.ra := ra_rev1;
 			decode_result.rb := rb_rev1;
-		when x"F1" => --neq
-			decode_result.opc := NEQ_opc;
+		when x"F1" => --jrneq
+			decode_result.opc := JRNEQ_opc;
 			decode_result.rt := rt_rev1;
 			decode_result.ra := ra_rev1;
 			decode_result.rb := rb_rev1;
-		when x"F2" => --gt
-			decode_result.opc := GT_opc;
+		when x"F2" => --jrgt
+			decode_result.opc := JRGT_opc;
 			decode_result.rt := rt_rev1;
 			decode_result.ra := ra_rev1;
 			decode_result.rb := rb_rev1;
-		when x"F3" => --gte
-			decode_result.opc := GTE_opc;
+		when x"F3" => --jrgte
+			decode_result.opc := JRGTE_opc;
+			decode_result.rt := rt_rev1;
+			decode_result.ra := ra_rev1;
+			decode_result.rb := rb_rev1;
+		when x"F4" => --jrlt
+			decode_result.opc := JRLT_opc;
+			decode_result.rt := rt_rev1;
+			decode_result.ra := ra_rev1;
+			decode_result.rb := rb_rev1;
+		when x"F5" => --jrlte
+			decode_result.opc := JRLTE_opc;
 			decode_result.rt := rt_rev1;
 			decode_result.ra := ra_rev1;
 			decode_result.rb := rb_rev1;
@@ -202,10 +241,26 @@ architecture twoproc of cpu_top is
 			decode_result.ra := ra_rev1;
 			decode_result.rb := rb_rev1;
 		when x"FA" => --fdiv
+			decode_result.opc := FDIV_opc;
+			decode_result.rt := rt_rev1;
+			decode_result.ra := ra_rev1;
+			decode_result.rb := rb_rev1;
 		when x"FB" => --fsin
+			decode_result.opc := FSIN_opc;
+			decode_result.rt := rt_rev1;
+			decode_result.ra := ra_rev1;
 		when x"FC" => --fcos
+			decode_result.opc := FCOS_opc;
+			decode_result.rt := rt_rev1;
+			decode_result.ra := ra_rev1;
 		when x"FD" => --fatan
+			decode_result.opc := FATAN_opc;
+			decode_result.rt := rt_rev1;
+			decode_result.ra := ra_rev1;
 		when x"FE" => --fsqrt
+			decode_result.opc := FSQRT_opc;
+			decode_result.rt := rt_rev1;
+			decode_result.ra := ra_rev1;
 		when others => --undefined instruction
 		end case;
 	end inst_decode;
@@ -279,6 +334,10 @@ architecture twoproc of cpu_top is
 				pc => decode_result.pc,
 				pc_next => (others => '0')
 			);
+		when CMP_opc =>
+			unit := ALU_UNIT;
+			alu_rs.op := alu_pack.CMP_op;
+			alu_rs.common := rs_common_3;
 		when ADD_opc =>
 			unit := ALU_UNIT;
 			alu_rs.op := alu_pack.ADD_op;
@@ -300,8 +359,49 @@ architecture twoproc of cpu_top is
 			alu_rs.op := alu_pack.XOR_op;
 			alu_rs.common := rs_common_3;
 		when NOT_opc =>
+			unit := ALU_UNIT;
+			alu_rs.op := alu_pack.NOT_op;
+			alu_rs.common := rs_common_3;
+		when SLL_opc =>
+			unit := ALU_UNIT;
+			alu_rs.op := alu_pack.SLL_op;
+			alu_rs.common := rs_common_3;
+		when SRL_opc =>
+			unit := ALU_UNIT;
+			alu_rs.op := alu_pack.SRL_op;
+			alu_rs.common := rs_common_3;
 		when FADD_opc =>
+			unit := FPU_UNIT;
+			fpu_rs.op := fpu_pack.FADD_op;
+			fpu_rs.common := rs_common_3;
 		when FMUL_opc =>
+			unit := FPU_UNIT;
+			fpu_rs.op := fpu_pack.FMUL_op;
+			fpu_rs.common := rs_common_3;
+		when FDIV_opc =>
+			unit := FPU_UNIT;
+			fpu_rs.op := fpu_pack.FDIV_op;
+			fpu_rs.common := rs_common_3;
+		when FSIN_opc =>
+			unit := FPU_UNIT;
+			fpu_rs.op := fpu_pack.FSIN_op;
+			fpu_rs.common := rs_common_3;
+		when FCOS_opc =>
+			unit := FPU_UNIT;
+			fpu_rs.op := fpu_pack.FCOS_op;
+			fpu_rs.common := rs_common_3;
+		when FATAN_opc =>
+			unit := FPU_UNIT;
+			fpu_rs.op := fpu_pack.FATAN_op;
+			fpu_rs.common := rs_common_3;
+		when FSQRT_opc =>
+			unit := FPU_UNIT;
+			fpu_rs.op := fpu_pack.FSQRT_op;
+			fpu_rs.common := rs_common_3;
+		when FCMP_opc =>
+			unit := FPU_UNIT;
+			fpu_rs.op := fpu_pack.FCMP_op;
+			fpu_rs.common := rs_common_3;
 		when J_opc =>
 			unit := BRANCH_UNIT;
 			branch_rs.op := branch_pack.J_op;
@@ -310,20 +410,7 @@ architecture twoproc of cpu_top is
 				rb => register_zero,
 				state => RS_Waiting,
 				result => (others => '0'),
-				rt_num => x"FF",
-				rob_num => rob_num,
-				pc => decode_result.pc,
-				pc_next => (others => '0')
-			);
-		when JZ_opc =>
-			unit := BRANCH_UNIT;
-			branch_rs.op := branch_pack.JZ_op;
-			branch_rs.common := (
-				ra => ra,
-				rb => (data => zext_imm, tag => rs_tag_zero),
-				state => RS_Waiting,
-				result => (others => '0'),
-				rt_num => x"FF",
+				rt_num => decode_result.rt,
 				rob_num => rob_num,
 				pc => decode_result.pc,
 				pc_next => (others => '0')
@@ -331,8 +418,40 @@ architecture twoproc of cpu_top is
 		when JR_opc =>
 			unit := BRANCH_UNIT;
 			branch_rs.op := branch_pack.JR_op;
-		when NOP_opc =>
-			unit := NULL_UNIT;
+			branch_rs.common := (
+				ra => ra,
+				rb => register_zero,
+				state => RS_Waiting,
+				result => (others => '0'),
+				rt_num => x"FF",
+				rob_num => rob_num,
+				pc => decode_result.pc,
+				pc_next => (others => '0')
+			);
+		when JREQ_opc =>
+			unit := BRANCH_UNIT;
+			branch_rs.op := branch_pack.JREQ_op;
+			branch_rs.common := rs_common_3;
+		when JRNEQ_opc =>
+			unit := BRANCH_UNIT;
+			branch_rs.op := branch_pack.JRNEQ_op;
+			branch_rs.common := rs_common_3;
+		when JRGT_opc =>
+			unit := BRANCH_UNIT;
+			branch_rs.op := branch_pack.JRGT_op;
+			branch_rs.common := rs_common_3;
+		when JRGTE_opc =>
+			unit := BRANCH_UNIT;
+			branch_rs.op := branch_pack.JRGTE_op;
+			branch_rs.common := rs_common_3;
+		when JRLT_opc =>
+			unit := BRANCH_UNIT;
+			branch_rs.op := branch_pack.JRLT_op;
+			branch_rs.common := rs_common_3;
+		when JRLTE_opc =>
+			unit := BRANCH_UNIT;
+			branch_rs.op := branch_pack.JRLTE_op;
+			branch_rs.common := rs_common_3;
 		when STW_opc =>
 			unit := MEM_UNIT;
 			mem_rs.op := mem_pack.STORE_op;
@@ -359,6 +478,8 @@ architecture twoproc of cpu_top is
 				pc => decode_result.pc,
 				pc_next => (others => '0')
 			);
+		when NOP_opc =>
+			unit := NULL_UNIT;
 		when others =>
 		end case;
 	end read_regs;

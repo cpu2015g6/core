@@ -68,9 +68,9 @@ begin
 					when LIMM_op =>
 						v.rs(i).common.result := ra_data;
 					when ADD_op =>
-						v.rs(i).common.result := std_logic_vector(unsigned(ra_data) + unsigned(rb_data));
+						v.rs(i).common.result := std_logic_vector(signed(ra_data) + signed(rb_data));
 					when SUB_op =>
-						v.rs(i).common.result := std_logic_vector(unsigned(ra_data) - unsigned(rb_data));
+						v.rs(i).common.result := std_logic_vector(signed(ra_data) - signed(rb_data));
 					when AND_op =>
 						v.rs(i).common.result := ra_data and rb_data;
 					when OR_op =>
@@ -79,32 +79,20 @@ begin
 						v.rs(i).common.result := ra_data xor rb_data;
 					when NOT_op =>
 						v.rs(i).common.result := not ra_data;
-					when EQ_op =>
-						if ra_data = rb_data then
-							v.rs(i).common.result := (others => '0');
+					when SLL_op =>
+						v.rs(i).common.result := std_logic_vector(shift_left(unsigned(ra_data), to_integer(unsigned(rb_data(4 downto 0)))));
+					when SRL_op =>
+						v.rs(i).common.result := std_logic_vector(shift_right(unsigned(ra_data), to_integer(unsigned(rb_data(4 downto 0)))));
+					when CMP_op =>
+						if signed(ra_data) > signed(rb_data) then
+							v.rs(i).common.result := gt_const;
+						elsif ra_data = rb_data then
+							v.rs(i).common.result := eq_const;
 						else
-							v.rs(i).common.result := (others => '1');
+							v.rs(i).common.result := lt_const;
 						end if;
-					when NEQ_op =>
-						if ra_data /= rb_data then
-							v.rs(i).common.result := (others => '0');
-						else
-							v.rs(i).common.result := (others => '1');
-						end if;
-					when GT_op =>
-						if signed(ra_data) < signed(rb_data) then
-							v.rs(i).common.result := (others => '0');
-						else
-							v.rs(i).common.result := (others => '1');
-						end if;
-					when GTE_op =>
-						if signed(ra_data) <= signed(rb_data) then
-							v.rs(i).common.result := (others => '0');
-						else
-							v.rs(i).common.result := (others => '1');
-						end if;
-					when others =>
-					-- TODO
+					when NOP_op =>
+--					when others =>
 				end case;
 				v.rs(i).common.state := RS_Done;
 				v.rs(i).common.pc_next := std_logic_vector(unsigned(v.rs(i).common.pc) + 1);
@@ -125,15 +113,7 @@ begin
 			v.cdb_out := cdb_zero;
 			for i in v.rs'range loop
 				if v.rs(i).common.state = RS_Done then
-					v.cdb_out := (
-						tag => (
-							valid => '1',
-							rob_num => v.rs(i).common.rob_num
-						),
-						reg_num => v.rs(i).common.rt_num,
-						data => v.rs(i).common.result,
-						pc_next => v.rs(i).common.pc_next
-					);
+					v.cdb_out := make_cdb_out(v.rs(i).common);
 					v.cdb_rs_num := std_logic_vector(to_unsigned(i, rs_num_width));
 				end if;
 			end loop;

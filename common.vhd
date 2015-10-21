@@ -7,8 +7,11 @@ package common is
 	subtype pc_type is std_logic_vector(pc_width-1 downto 0);
 	constant rob_num_width : integer := 5;
 	subtype rob_num_type is std_logic_vector(rob_num_width-1 downto 0);
-	type opc_type is (NOP_opc, LIMM_opc, J_opc, JZ_opc, JR_opc, STW_opc, LDW_opc, ADD_opc, SUB_opc, AND_opc, OR_opc, XOR_opc, NOT_opc, SHL_opc, SHR_opc, EQ_opc, NEQ_opc, GT_opc, GTE_opc, LT_opc, LTE_opc, FADD_opc, FMUL_opc, FDIV_opc, FSIN_opc, FCOS_opc, FATAN_opc, FSQRT_opc);
+	type opc_type is (NOP_opc, LIMM_opc, CMP_opc, IN_opc, OUT_opc, J_opc, JR_opc, JREQ_opc, JRNEQ_opc, JRGT_opc, JRGTE_opc, JRLT_opc, JRLTE_opc, STW_opc, LDW_opc, ADD_opc, SUB_opc, AND_opc, OR_opc, XOR_opc, NOT_opc, SLL_opc, SRL_opc, FADD_opc, FMUL_opc, FDIV_opc, FSIN_opc, FCOS_opc, FATAN_opc, FSQRT_opc, FCMP_opc);
 	type unit_type is (ALU_UNIT, FPU_UNIT, MEM_UNIT, BRANCH_UNIT, NULL_UNIT);
+	constant gt_const : std_logic_vector(31 downto 0) := x"00000002";
+	constant eq_const : std_logic_vector(31 downto 0) := x"00000001";
+	constant lt_const : std_logic_vector(31 downto 0) := x"00000000";
 	-- reservation station
 	type rs_tag_type is record
 		valid : std_logic;
@@ -89,6 +92,7 @@ package common is
 		(others => '0')
 	);
 	function register_update(reg : register_type; cdb : cdb_type) return register_type;
+	function make_cdb_out(rs_common : rs_common_type) return cdb_type;
 end common;
 
 package body common is
@@ -106,13 +110,25 @@ package body common is
 		end if;
 		return v;
 	end register_update;
+	function make_cdb_out(rs_common : rs_common_type) return cdb_type is
+	begin
+		return (
+			tag => (
+				valid => '1',
+				rob_num => rs_common.rob_num
+			),
+			reg_num => rs_common.rt_num,
+			data => rs_common.result,
+			pc_next => rs_common.pc_next
+		);
+	end make_cdb_out;
 end common;
 
 library ieee;
 use ieee.std_logic_1164.all;
 use work.common.all;
 package alu_pack is
-	type op_type is (LIMM_op, ADD_op, SUB_op, AND_op, OR_op, XOR_op, NOT_op, SHL_op, SHR_op, EQ_op, NEQ_op, GT_op, GTE_op, NOP_op);
+	type op_type is (LIMM_op, CMP_op, ADD_op, SUB_op, AND_op, OR_op, XOR_op, NOT_op, SLL_op, SRL_op, NOP_op);
 	type rs_type is record
 		op : op_type;
 		common : rs_common_type;
@@ -204,7 +220,7 @@ library ieee;
 use ieee.std_logic_1164.all;
 use work.common.all;
 package branch_pack is
-	type op_type is (J_op, JZ_op, JR_op, NOP_op);
+	type op_type is (J_op, JR_op, JREQ_op, JRNEQ_op, JRGT_op, JRGTE_op, JRLT_op, JRLTE_op, NOP_op);
 	type rs_type is record
 		op : op_type;
 		common : rs_common_type;

@@ -57,14 +57,24 @@ begin
 				case v.rs(i).op is
 					when J_op =>
 						v.rs(i).common.pc_next := std_logic_vector(signed(v.rs(i).common.pc) + signed(v.rs(i).common.ra.data(pc_width-1 downto 0)));
-					when JZ_op =>
-						if v.rs(i).common.ra.data = (31 downto 0 => '0') then
-							v.rs(i).common.pc_next := std_logic_vector(signed(v.rs(i).common.pc) + signed(v.rs(i).common.rb.data(pc_width-1 downto 0)));
+						v.rs(i).common.result := std_logic_vector(unsigned((31-pc_width downto 0 => '0') & v.rs(i).common.pc) + 1);
+					when JR_op =>
+						v.rs(i).common.pc_next := v.rs(i).common.ra.data(pc_width-1 downto 0);
+						v.rs(i).common.result := std_logic_vector(unsigned((31-pc_width downto 0 => '0') & v.rs(i).common.pc) + 1);
+					when JREQ_op =>
+						if v.rs(i).common.ra.data = eq_const then
+							v.rs(i).common.pc_next := v.rs(i).common.rb.data(pc_width-1 downto 0);
 						else
 							v.rs(i).common.pc_next := std_logic_vector(unsigned(v.rs(i).common.pc) + 1);
 						end if;
-					when JR_op =>
-					when others =>
+						v.rs(i).common.result := std_logic_vector(unsigned(v.rs(i).common.pc) + 1);
+					when JRNEQ_op =>
+					when JRGT_op =>
+					when JRGTE_op =>
+					when JRLT_op =>
+					when JRLTE_op =>
+					when NOP_op =>
+--					when others =>
 				end case;
 				v.rs(i).common.state := RS_Done;
 				exec_done := true;
@@ -84,15 +94,7 @@ begin
 			v.cdb_out := cdb_zero;
 			for i in v.rs'range loop
 				if v.rs(i).common.state = RS_Done then
-					v.cdb_out := (
-						tag => (
-							valid => '1',
-							rob_num => v.rs(i).common.rob_num
-						),
-						reg_num => v.rs(i).common.rt_num,
-						data => v.rs(i).common.result,
-						pc_next => v.rs(i).common.pc_next
-					);
+					v.cdb_out := make_cdb_out(v.rs(i).common);
 					v.cdb_rs_num := std_logic_vector(to_unsigned(i, rs_num_width));
 				end if;
 			end loop;
