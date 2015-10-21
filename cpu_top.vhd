@@ -64,7 +64,7 @@ architecture twoproc of cpu_top is
 			fpu_in : in fpu_pack.in_type;
 			fpu_out : out fpu_pack.out_type);
 	end component;
-	signal fpu_in : fpu_pack.in_type;
+	signal fpu_in : fpu_pack.in_type := fpu_pack.in_zero;
 	signal fpu_out : fpu_pack.out_type;
 	component mem is
 		port(
@@ -78,9 +78,9 @@ architecture twoproc of cpu_top is
 			branch_in : in branch_pack.in_type;
 			branch_out : out branch_pack.out_type);
 	end component;
-	signal mem_in : mem_pack.in_type;
+	signal mem_in : mem_pack.in_type := mem_pack.in_zero;
 	signal mem_out : mem_pack.out_type;
-	signal branch_in : branch_pack.in_type;
+	signal branch_in : branch_pack.in_type := branch_pack.in_zero;
 	signal branch_out : branch_pack.out_type;
 	-- determines the next pc
 	procedure branch_predictor(
@@ -540,6 +540,9 @@ begin
 	begin
 		v := r;
 		alu_in_v := alu_pack.in_zero;
+		fpu_in_v := fpu_pack.in_zero;
+		mem_in_v := mem_pack.in_zero;
+		branch_in_v := branch_pack.in_zero;
 		-- update ROB
 		v.rob.rob_array := update_ROB(r.rob.rob_array, r.cdb);
 		-- decode instruction
@@ -648,7 +651,10 @@ begin
 				state => CPU_NORMAL
 			);
 			-- reset other modules
-			-- TODO
+			alu_in_v.rst := '1';
+			fpu_in_v.rst := '1';
+			mem_in_v.rst := '1';
+			branch_in_v.rst := '1';
 		end if;
 		alu_in <= alu_in_v;
 		fpu_in <= fpu_in_v;

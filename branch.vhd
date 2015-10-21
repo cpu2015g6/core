@@ -43,6 +43,7 @@ begin
 	process(branch_in, r)
 		variable v : reg_type;
 		variable exec_done : boolean;
+		variable pc32 : std_logic_vector(31 downto 0);
 	begin
 		v := r;
 		-- update rs
@@ -54,25 +55,56 @@ begin
 		exec_done := false;
 		for i in v.rs'range loop
 			if rs_common_ready(v.rs(i).common) and not exec_done then
+				pc32 := std_logic_vector(unsigned((31-pc_width downto 0 => '0') & v.rs(i).common.pc) + 1);
 				case v.rs(i).op is
 					when J_op =>
 						v.rs(i).common.pc_next := std_logic_vector(signed(v.rs(i).common.pc) + signed(v.rs(i).common.ra.data(pc_width-1 downto 0)));
-						v.rs(i).common.result := std_logic_vector(unsigned((31-pc_width downto 0 => '0') & v.rs(i).common.pc) + 1);
+						v.rs(i).common.result := pc32;
 					when JR_op =>
 						v.rs(i).common.pc_next := v.rs(i).common.ra.data(pc_width-1 downto 0);
-						v.rs(i).common.result := std_logic_vector(unsigned((31-pc_width downto 0 => '0') & v.rs(i).common.pc) + 1);
+						v.rs(i).common.result := pc32;
 					when JREQ_op =>
 						if v.rs(i).common.ra.data = eq_const then
 							v.rs(i).common.pc_next := v.rs(i).common.rb.data(pc_width-1 downto 0);
 						else
 							v.rs(i).common.pc_next := std_logic_vector(unsigned(v.rs(i).common.pc) + 1);
 						end if;
-						v.rs(i).common.result := std_logic_vector(unsigned(v.rs(i).common.pc) + 1);
+						v.rs(i).common.result := pc32;
 					when JRNEQ_op =>
+						if v.rs(i).common.ra.data /= eq_const then
+							v.rs(i).common.pc_next := v.rs(i).common.rb.data(pc_width-1 downto 0);
+						else
+							v.rs(i).common.pc_next := std_logic_vector(unsigned(v.rs(i).common.pc) + 1);
+						end if;
+						v.rs(i).common.result := pc32;
 					when JRGT_op =>
+						if v.rs(i).common.ra.data = gt_const then
+							v.rs(i).common.pc_next := v.rs(i).common.rb.data(pc_width-1 downto 0);
+						else
+							v.rs(i).common.pc_next := std_logic_vector(unsigned(v.rs(i).common.pc) + 1);
+						end if;
+						v.rs(i).common.result := pc32;
 					when JRGTE_op =>
+						if v.rs(i).common.ra.data /= lt_const then
+							v.rs(i).common.pc_next := v.rs(i).common.rb.data(pc_width-1 downto 0);
+						else
+							v.rs(i).common.pc_next := std_logic_vector(unsigned(v.rs(i).common.pc) + 1);
+						end if;
+						v.rs(i).common.result := pc32;
 					when JRLT_op =>
+						if v.rs(i).common.ra.data = lt_const then
+							v.rs(i).common.pc_next := v.rs(i).common.rb.data(pc_width-1 downto 0);
+						else
+							v.rs(i).common.pc_next := std_logic_vector(unsigned(v.rs(i).common.pc) + 1);
+						end if;
+						v.rs(i).common.result := pc32;
 					when JRLTE_op =>
+						if v.rs(i).common.ra.data /= gt_const then
+							v.rs(i).common.pc_next := v.rs(i).common.rb.data(pc_width-1 downto 0);
+						else
+							v.rs(i).common.pc_next := std_logic_vector(unsigned(v.rs(i).common.pc) + 1);
+						end if;
+						v.rs(i).common.result := pc32;
 					when NOP_op =>
 --					when others =>
 				end case;
@@ -107,6 +139,10 @@ begin
 				v.rs_full := '0';
 			end if;
 		end loop;
-		r_in <= v;
+		if branch_in.rst = '1' then
+			r_in <= reg_zero;
+		else
+			r_in <= v;
+		end if;
 	end process;
 end;

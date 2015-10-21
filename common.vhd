@@ -142,10 +142,12 @@ package alu_pack is
 		rs_in : rs_type;
 		cdb_in : cdb_type;-- invalid -> cdb_in.tag.unit = NULL_UNIT, valid -> ALU_UNIT
 		cdb_next : std_logic;-- set cdb_next = 1 when cdb_out is broadcasted
+		rst : std_logic;-- synchronous reset
 	end record;
 	constant in_zero : in_type := (
 		rs_zero,
 		cdb_zero,
+		'0',
 		'0'
 	);
 	type out_type is record
@@ -176,7 +178,14 @@ package fpu_pack is
 		rs_in : rs_type;
 		cdb_in : cdb_type;
 		cdb_next : std_logic;-- set cdb_next = 1 when cdb_out is broadcasted
+		rst : std_logic;-- synchronous reset
 	end record;
+	constant in_zero : in_type := (
+		rs_zero,
+		cdb_zero,
+		'0',
+		'0'
+	);
 	type out_type is record
 		rs_full : std_logic;
 		cdb_out : cdb_type;
@@ -205,7 +214,14 @@ package mem_pack is
 		rs_in : rs_type;
 		cdb_in : cdb_type;
 		cdb_next : std_logic;-- set cdb_next = 1 when cdb_out is broadcasted
+		rst : std_logic;-- synchronous reset
 	end record;
+	constant in_zero : in_type := (
+		rs_zero,
+		cdb_zero,
+		'0',
+		'0'
+	);
 	type out_type is record
 		rs_full : std_logic;
 		cdb_out : cdb_type;
@@ -234,7 +250,14 @@ package branch_pack is
 		rs_in : rs_type;
 		cdb_in : cdb_type;
 		cdb_next : std_logic;-- set cdb_next = 1 when cdb_out is broadcasted
+		rst : std_logic;-- synchronous reset
 	end record;
+	constant in_zero : in_type := (
+		rs_zero,
+		cdb_zero,
+		'0',
+		'0'
+	);
 	type out_type is record
 		rs_full : std_logic;
 		cdb_out : cdb_type;

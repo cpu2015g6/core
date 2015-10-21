@@ -97,6 +97,10 @@ begin
 				v.rs_full := '0';
 			end if;
 		end loop;
-		r_in <= v;
+		if fpu_in.rst = '1' then
+			r_in <= reg_zero;
+		else
+			r_in <= v;
+		end if;
 	end process;
 end;
