@@ -1,6 +1,40 @@
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
+
+entity blockram is
+	generic(
+		dwidth : integer;
+		awidth : integer
+	);
+	port(
+		clk, we : in std_logic;
+		addr : in std_logic_vector(awidth-1 downto 0);
+		din : in std_logic_vector(dwidth-1 downto 0);
+		dout : out std_logic_vector(dwidth-1 downto 0)
+	);
+end entity;
+
+architecture beh of blockram is
+	type ram_type is array(0 to 2**awidth-1) of std_logic_vector(dwidth-1 downto 0);
+	signal ram : ram_type := (others => (others => '0'));
+	signal reg_addr : std_logic_vector(awidth-1 downto 0) := (others => '0');
+begin
+	process(clk)
+	begin
+		if rising_edge(clk) then
+			if we = '1' then
+				ram(to_integer(unsigned(addr))) <= din;
+			end if;
+			reg_addr <= addr;
+		end if;
+	end process;
+	dout <= ram(to_integer(unsigned(reg_addr)));
+end;
+
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 use work.common.all;
 use work.all;
 
@@ -11,7 +45,22 @@ entity cpu_top is
 end cpu_top;
 
 architecture twoproc of cpu_top is
-	type program_memory_type is array (0 to 2**pc_width-1) of std_logic_vector(31 downto 0);
+	component blockram is
+		generic(
+			dwidth : integer;
+			awidth : integer
+		);
+		port(
+			clk, we : in std_logic;
+			addr : in std_logic_vector(awidth-1 downto 0);
+			din : in std_logic_vector(dwidth-1 downto 0);
+			dout : out std_logic_vector(dwidth-1 downto 0)
+		);
+	end component;
+	signal bram_we : std_logic := '0';
+	signal bram_addr : std_logic_vector(pc_width-1 downto 0) := (others => '0');
+	signal bram_din : std_logic_vector(31 downto 0) := (others => '0');
+	signal bram_dout : std_logic_vector(31 downto 0) := (others => '0');
 	type rob_array_type is array (0 to 2**rob_num_width-1) of rob_type;
 	type rob_ring_buffer_type is record
 		rob_array : rob_array_type;
@@ -36,7 +85,6 @@ architecture twoproc of cpu_top is
 		cdb : cdb_type;
 		registers : register_array_type;
 		pc : pc_type;
-		program_memory : program_memory_type;
 		rob : rob_ring_buffer_type;
 		state : CPU_state_type;
 	end record;
@@ -45,7 +93,6 @@ architecture twoproc of cpu_top is
 		cdb_zero,
 		register_array_zero,
 		(others => '0'),
-		(others => (others => '0')),
 		rob_ring_buffer_zero,
 		CPU_NORMAL
 	);
@@ -264,204 +311,204 @@ architecture twoproc of cpu_top is
 		end if;
 	end read_reg;
 -- http://japan.xilinx.com/support/answers/23475.html
-	alias alu_rs_type is alu_pack.rs_type;
-	alias fpu_rs_type is fpu_pack.rs_type;
-	alias mem_rs_type is mem_pack.rs_type;
-	alias branch_rs_type is branch_pack.rs_type;
-	procedure read_regs(
-		decode_result : in decode_result_type;
-		regs : in register_array_type;
-		rob_array : in rob_array_type;
-		rob_num : in rob_num_type;
-		unit : out unit_type;
-		alu_rs : out alu_rs_type;
-		fpu_rs : out fpu_rs_type;
-		mem_rs : out mem_rs_type;
-		branch_rs : out branch_rs_type) is
-	variable ra, rb : register_type;
-	variable rs_common_3 : rs_common_type;
-	variable zext_imm : std_logic_vector(31 downto 0);
-	begin
-		ra := read_reg(decode_result.ra, regs, rob_array);
-		rb := read_reg(decode_result.rb, regs, rob_array);
-		alu_rs := alu_pack.rs_zero;
-		fpu_rs := fpu_pack.rs_zero;
-		mem_rs := mem_pack.rs_zero;
-		branch_rs := branch_pack.rs_zero;
-		zext_imm := x"0000" & decode_result.imm;
-		rs_common_3 := (
-			ra => ra,
-			rb => rb,
-			state => RS_Waiting,
-			result => (others => '0'),
-			rt_num => decode_result.rt,
-			rob_num => rob_num,
-			pc => decode_result.pc,
-			pc_next => (others => '0')
-		);
-		case decode_result.opc is
-		when LIMM_opc =>
-			unit := ALU_UNIT;
-			alu_rs.op := alu_pack.LIMM_op;
-			alu_rs.common := (
-				ra => (data => zext_imm, tag => rs_tag_zero),
-				rb => register_zero,
-				state => RS_Waiting,
-				result => (others => '0'),
-				rt_num => decode_result.rt,
-				rob_num => rob_num,
-				pc => decode_result.pc,
-				pc_next => (others => '0')
-			);
-		when CMP_opc =>
-			unit := ALU_UNIT;
-			alu_rs.op := alu_pack.CMP_op;
-			alu_rs.common := rs_common_3;
-		when ADD_opc =>
-			unit := ALU_UNIT;
-			alu_rs.op := alu_pack.ADD_op;
-			alu_rs.common := rs_common_3;
-		when SUB_opc =>
-			unit := ALU_UNIT;
-			alu_rs.op := alu_pack.SUB_op;
-			alu_rs.common := rs_common_3;
-		when AND_opc =>
-			unit := ALU_UNIT;
-			alu_rs.op := alu_pack.AND_op;
-			alu_rs.common := rs_common_3;
-		when OR_opc =>
-			unit := ALU_UNIT;
-			alu_rs.op := alu_pack.OR_op;
-			alu_rs.common := rs_common_3;
-		when XOR_opc =>
-			unit := ALU_UNIT;
-			alu_rs.op := alu_pack.XOR_op;
-			alu_rs.common := rs_common_3;
-		when NOT_opc =>
-			unit := ALU_UNIT;
-			alu_rs.op := alu_pack.NOT_op;
-			alu_rs.common := rs_common_3;
-		when SLL_opc =>
-			unit := ALU_UNIT;
-			alu_rs.op := alu_pack.SLL_op;
-			alu_rs.common := rs_common_3;
-		when SRL_opc =>
-			unit := ALU_UNIT;
-			alu_rs.op := alu_pack.SRL_op;
-			alu_rs.common := rs_common_3;
-		when FADD_opc =>
-			unit := FPU_UNIT;
-			fpu_rs.op := fpu_pack.FADD_op;
-			fpu_rs.common := rs_common_3;
-		when FMUL_opc =>
-			unit := FPU_UNIT;
-			fpu_rs.op := fpu_pack.FMUL_op;
-			fpu_rs.common := rs_common_3;
-		when FDIV_opc =>
-			unit := FPU_UNIT;
-			fpu_rs.op := fpu_pack.FDIV_op;
-			fpu_rs.common := rs_common_3;
-		when FSIN_opc =>
-			unit := FPU_UNIT;
-			fpu_rs.op := fpu_pack.FSIN_op;
-			fpu_rs.common := rs_common_3;
-		when FCOS_opc =>
-			unit := FPU_UNIT;
-			fpu_rs.op := fpu_pack.FCOS_op;
-			fpu_rs.common := rs_common_3;
-		when FATAN_opc =>
-			unit := FPU_UNIT;
-			fpu_rs.op := fpu_pack.FATAN_op;
-			fpu_rs.common := rs_common_3;
-		when FSQRT_opc =>
-			unit := FPU_UNIT;
-			fpu_rs.op := fpu_pack.FSQRT_op;
-			fpu_rs.common := rs_common_3;
-		when FCMP_opc =>
-			unit := FPU_UNIT;
-			fpu_rs.op := fpu_pack.FCMP_op;
-			fpu_rs.common := rs_common_3;
-		when J_opc =>
-			unit := BRANCH_UNIT;
-			branch_rs.op := branch_pack.J_op;
-			branch_rs.common := (
-				ra => (data => zext_imm, tag => rs_tag_zero),
-				rb => register_zero,
-				state => RS_Waiting,
-				result => (others => '0'),
-				rt_num => decode_result.rt,
-				rob_num => rob_num,
-				pc => decode_result.pc,
-				pc_next => (others => '0')
-			);
-		when JR_opc =>
-			unit := BRANCH_UNIT;
-			branch_rs.op := branch_pack.JR_op;
-			branch_rs.common := (
-				ra => ra,
-				rb => register_zero,
-				state => RS_Waiting,
-				result => (others => '0'),
-				rt_num => x"FF",
-				rob_num => rob_num,
-				pc => decode_result.pc,
-				pc_next => (others => '0')
-			);
-		when JREQ_opc =>
-			unit := BRANCH_UNIT;
-			branch_rs.op := branch_pack.JREQ_op;
-			branch_rs.common := rs_common_3;
-		when JRNEQ_opc =>
-			unit := BRANCH_UNIT;
-			branch_rs.op := branch_pack.JRNEQ_op;
-			branch_rs.common := rs_common_3;
-		when JRGT_opc =>
-			unit := BRANCH_UNIT;
-			branch_rs.op := branch_pack.JRGT_op;
-			branch_rs.common := rs_common_3;
-		when JRGTE_opc =>
-			unit := BRANCH_UNIT;
-			branch_rs.op := branch_pack.JRGTE_op;
-			branch_rs.common := rs_common_3;
-		when JRLT_opc =>
-			unit := BRANCH_UNIT;
-			branch_rs.op := branch_pack.JRLT_op;
-			branch_rs.common := rs_common_3;
-		when JRLTE_opc =>
-			unit := BRANCH_UNIT;
-			branch_rs.op := branch_pack.JRLTE_op;
-			branch_rs.common := rs_common_3;
-		when STW_opc =>
-			unit := MEM_UNIT;
-			mem_rs.op := mem_pack.STORE_op;
-			mem_rs.common := (
-				ra => ra,
-				rb => rb,
-				state => RS_Waiting,
-				result => (others => '0'),
-				rt_num => decode_result.rt,
-				rob_num => rob_num,
-				pc => decode_result.pc,
-				pc_next => (others => '0')
-			);
-		when LDW_opc =>
-			unit := MEM_UNIT;
-			mem_rs.op := mem_pack.LOAD_op;
-			mem_rs.common := (
-				ra => ra,
-				rb => register_zero,
-				state => RS_Waiting,
-				result => (others => '0'),
-				rt_num => decode_result.rt,
-				rob_num => rob_num,
-				pc => decode_result.pc,
-				pc_next => (others => '0')
-			);
-		when NOP_opc =>
-			unit := NULL_UNIT;
-		when others =>
-		end case;
-	end read_regs;
+--	alias alu_rs_type is alu_pack.rs_type;
+--	alias fpu_rs_type is fpu_pack.rs_type;
+--	alias mem_rs_type is mem_pack.rs_type;
+--	alias branch_rs_type is branch_pack.rs_type;
+--	procedure read_regs(
+--		decode_result : in decode_result_type;
+--		regs : in register_array_type;
+--		rob_array : in rob_array_type;
+--		rob_num : in rob_num_type;
+--		unit : out unit_type;
+--		alu_rs : out alu_rs_type;
+--		fpu_rs : out fpu_rs_type;
+--		mem_rs : out mem_rs_type;
+--		branch_rs : out branch_rs_type) is
+--	variable ra, rb : register_type;
+--	variable rs_common_3 : rs_common_type;
+--	variable zext_imm : std_logic_vector(31 downto 0);
+--	begin
+--		ra := read_reg(decode_result.ra, regs, rob_array);
+--		rb := read_reg(decode_result.rb, regs, rob_array);
+--		alu_rs := alu_pack.rs_zero;
+--		fpu_rs := fpu_pack.rs_zero;
+--		mem_rs := mem_pack.rs_zero;
+--		branch_rs := branch_pack.rs_zero;
+--		zext_imm := x"0000" & decode_result.imm;
+--		rs_common_3 := (
+--			ra => ra,
+--			rb => rb,
+--			state => RS_Waiting,
+--			result => (others => '0'),
+--			rt_num => decode_result.rt,
+--			rob_num => rob_num,
+--			pc => decode_result.pc,
+--			pc_next => (others => '0')
+--		);
+--		case decode_result.opc is
+--		when LIMM_opc =>
+--			unit := ALU_UNIT;
+--			alu_rs.op := alu_pack.LIMM_op;
+--			alu_rs.common := (
+--				ra => (data => zext_imm, tag => rs_tag_zero),
+--				rb => register_zero,
+--				state => RS_Waiting,
+--				result => (others => '0'),
+--				rt_num => decode_result.rt,
+--				rob_num => rob_num,
+--				pc => decode_result.pc,
+--				pc_next => (others => '0')
+--			);
+--		when CMP_opc =>
+--			unit := ALU_UNIT;
+--			alu_rs.op := alu_pack.CMP_op;
+--			alu_rs.common := rs_common_3;
+--		when ADD_opc =>
+--			unit := ALU_UNIT;
+--			alu_rs.op := alu_pack.ADD_op;
+--			alu_rs.common := rs_common_3;
+--		when SUB_opc =>
+--			unit := ALU_UNIT;
+--			alu_rs.op := alu_pack.SUB_op;
+--			alu_rs.common := rs_common_3;
+--		when AND_opc =>
+--			unit := ALU_UNIT;
+--			alu_rs.op := alu_pack.AND_op;
+--			alu_rs.common := rs_common_3;
+--		when OR_opc =>
+--			unit := ALU_UNIT;
+--			alu_rs.op := alu_pack.OR_op;
+--			alu_rs.common := rs_common_3;
+--		when XOR_opc =>
+--			unit := ALU_UNIT;
+--			alu_rs.op := alu_pack.XOR_op;
+--			alu_rs.common := rs_common_3;
+--		when NOT_opc =>
+--			unit := ALU_UNIT;
+--			alu_rs.op := alu_pack.NOT_op;
+--			alu_rs.common := rs_common_3;
+--		when SLL_opc =>
+--			unit := ALU_UNIT;
+--			alu_rs.op := alu_pack.SLL_op;
+--			alu_rs.common := rs_common_3;
+--		when SRL_opc =>
+--			unit := ALU_UNIT;
+--			alu_rs.op := alu_pack.SRL_op;
+--			alu_rs.common := rs_common_3;
+--		when FADD_opc =>
+--			unit := FPU_UNIT;
+--			fpu_rs.op := fpu_pack.FADD_op;
+--			fpu_rs.common := rs_common_3;
+--		when FMUL_opc =>
+--			unit := FPU_UNIT;
+--			fpu_rs.op := fpu_pack.FMUL_op;
+--			fpu_rs.common := rs_common_3;
+--		when FDIV_opc =>
+--			unit := FPU_UNIT;
+--			fpu_rs.op := fpu_pack.FDIV_op;
+--			fpu_rs.common := rs_common_3;
+--		when FSIN_opc =>
+--			unit := FPU_UNIT;
+--			fpu_rs.op := fpu_pack.FSIN_op;
+--			fpu_rs.common := rs_common_3;
+--		when FCOS_opc =>
+--			unit := FPU_UNIT;
+--			fpu_rs.op := fpu_pack.FCOS_op;
+--			fpu_rs.common := rs_common_3;
+--		when FATAN_opc =>
+--			unit := FPU_UNIT;
+--			fpu_rs.op := fpu_pack.FATAN_op;
+--			fpu_rs.common := rs_common_3;
+--		when FSQRT_opc =>
+--			unit := FPU_UNIT;
+--			fpu_rs.op := fpu_pack.FSQRT_op;
+--			fpu_rs.common := rs_common_3;
+--		when FCMP_opc =>
+--			unit := FPU_UNIT;
+--			fpu_rs.op := fpu_pack.FCMP_op;
+--			fpu_rs.common := rs_common_3;
+--		when J_opc =>
+--			unit := BRANCH_UNIT;
+--			branch_rs.op := branch_pack.J_op;
+--			branch_rs.common := (
+--				ra => (data => zext_imm, tag => rs_tag_zero),
+--				rb => register_zero,
+--				state => RS_Waiting,
+--				result => (others => '0'),
+--				rt_num => decode_result.rt,
+--				rob_num => rob_num,
+--				pc => decode_result.pc,
+--				pc_next => (others => '0')
+--			);
+--		when JR_opc =>
+--			unit := BRANCH_UNIT;
+--			branch_rs.op := branch_pack.JR_op;
+--			branch_rs.common := (
+--				ra => ra,
+--				rb => register_zero,
+--				state => RS_Waiting,
+--				result => (others => '0'),
+--				rt_num => x"FF",
+--				rob_num => rob_num,
+--				pc => decode_result.pc,
+--				pc_next => (others => '0')
+--			);
+--		when JREQ_opc =>
+--			unit := BRANCH_UNIT;
+--			branch_rs.op := branch_pack.JREQ_op;
+--			branch_rs.common := rs_common_3;
+--		when JRNEQ_opc =>
+--			unit := BRANCH_UNIT;
+--			branch_rs.op := branch_pack.JRNEQ_op;
+--			branch_rs.common := rs_common_3;
+--		when JRGT_opc =>
+--			unit := BRANCH_UNIT;
+--			branch_rs.op := branch_pack.JRGT_op;
+--			branch_rs.common := rs_common_3;
+--		when JRGTE_opc =>
+--			unit := BRANCH_UNIT;
+--			branch_rs.op := branch_pack.JRGTE_op;
+--			branch_rs.common := rs_common_3;
+--		when JRLT_opc =>
+--			unit := BRANCH_UNIT;
+--			branch_rs.op := branch_pack.JRLT_op;
+--			branch_rs.common := rs_common_3;
+--		when JRLTE_opc =>
+--			unit := BRANCH_UNIT;
+--			branch_rs.op := branch_pack.JRLTE_op;
+--			branch_rs.common := rs_common_3;
+--		when STW_opc =>
+--			unit := MEM_UNIT;
+--			mem_rs.op := mem_pack.STORE_op;
+--			mem_rs.common := (
+--				ra => ra,
+--				rb => rb,
+--				state => RS_Waiting,
+--				result => (others => '0'),
+--				rt_num => decode_result.rt,
+--				rob_num => rob_num,
+--				pc => decode_result.pc,
+--				pc_next => (others => '0')
+--			);
+--		when LDW_opc =>
+--			unit := MEM_UNIT;
+--			mem_rs.op := mem_pack.LOAD_op;
+--			mem_rs.common := (
+--				ra => ra,
+--				rb => register_zero,
+--				state => RS_Waiting,
+--				result => (others => '0'),
+--				rt_num => decode_result.rt,
+--				rob_num => rob_num,
+--				pc => decode_result.pc,
+--				pc_next => (others => '0')
+--			);
+--		when NOP_opc =>
+--			unit := NULL_UNIT;
+--		when others =>
+--		end case;
+--	end read_regs;
 	procedure cdb_arbiter(
 		alu_cdb_out, fpu_cdb_out, mem_cdb_out, branch_cdb_out : in cdb_type;
 		alu_grant, fpu_grant, mem_grant, branch_grant : out std_logic;
@@ -507,6 +554,10 @@ architecture twoproc of cpu_top is
 		return new_rob_array;
 	end update_ROB;
 begin
+	bram_addr <= r_in.pc;
+	bram_l : blockram
+	generic map(awidth => pc_width, dwidth => 32)
+	port map(clk => clk, we => bram_we, din => bram_din, dout => bram_dout, addr => bram_addr);
 	alu_l : alu
 	port map(clk => clk, rst => rst, alu_in => alu_in, alu_out => alu_out);
 	fpu_l : fpu
@@ -523,7 +574,7 @@ begin
 			r <= r_in;
 		end if;
 	end process;
-	comb : process(r, alu_out, fpu_out, mem_out, branch_out)
+	comb : process(r, alu_out, fpu_out, mem_out, branch_out, bram_dout)
 		variable v : reg_type;
 		variable alu_in_v : alu_pack.in_type;
 		variable fpu_in_v : fpu_pack.in_type;
@@ -538,9 +589,14 @@ begin
 		variable unit : unit_type;
 		variable stall : boolean;
 		variable oldest_rob : rob_type;
+		-- read_regs
+		variable ra, rb : register_type;
+		variable rs_common_3 : rs_common_type;
+		variable zext_imm : std_logic_vector(31 downto 0);
 	begin
 		v := r;
 		alu_in_v := alu_pack.in_zero;
+		alu_in_v.rs_in.op := alu_pack.ADD_op;
 		fpu_in_v := fpu_pack.in_zero;
 		mem_in_v := mem_pack.in_zero;
 		branch_in_v := branch_pack.in_zero;
@@ -548,7 +604,7 @@ begin
 		v.rob.rob_array := update_ROB(r.rob.rob_array, r.cdb);
 		-- decode instruction
 		inst_decode(
-			inst => r.program_memory(to_integer(unsigned(r.pc))),
+			inst => bram_dout,
 			decode_result => decode_result_v
 		);
 		-- branch prediction
@@ -560,17 +616,196 @@ begin
 		decode_result_v.pc := r.pc;
 		decode_result_v.pc_predicted := next_pc;
 		-- read register and issue
-		read_regs(
-			decode_result => r.decode_result,
-			regs => r.registers,
-			rob_array => v.rob.rob_array,
+		ra := read_reg(r.decode_result.ra, r.registers, v.rob.rob_array);
+		rb := read_reg(r.decode_result.rb, r.registers, v.rob.rob_array);
+		alu_rs_v := alu_pack.rs_zero;
+		fpu_rs_v := fpu_pack.rs_zero;
+		mem_rs_v := mem_pack.rs_zero;
+		branch_rs_v := branch_pack.rs_zero;
+		zext_imm := x"0000" & r.decode_result.imm;
+		rs_common_3 := (
+			ra => ra,
+			rb => rb,
+			state => RS_Waiting,
+			result => (others => '0'),
+			rt_num => r.decode_result.rt,
 			rob_num => r.rob.youngest,
-			unit => unit,
-			alu_rs => alu_rs_v,
-			fpu_rs => fpu_rs_v,
-			mem_rs => mem_rs_v,
-			branch_rs => branch_rs_v
+			pc => r.decode_result.pc,
+			pc_next => (others => '0')
 		);
+		case r.decode_result.opc is
+		when LIMM_opc =>
+			unit := ALU_UNIT;
+			alu_rs_v.op := alu_pack.LIMM_op;
+			alu_rs_v.common := (
+				ra => (data => zext_imm, tag => rs_tag_zero),
+				rb => register_zero,
+				state => RS_Waiting,
+				result => (others => '0'),
+				rt_num => r.decode_result.rt,
+				rob_num => r.rob.youngest,
+				pc => r.decode_result.pc,
+				pc_next => (others => '0')
+			);
+		when CMP_opc =>
+			unit := ALU_UNIT;
+			alu_rs_v.op := alu_pack.CMP_op;
+			alu_rs_v.common := rs_common_3;
+		when ADD_opc =>
+			unit := ALU_UNIT;
+			alu_rs_v.op := alu_pack.ADD_op;
+			alu_rs_v.common := rs_common_3;
+		when SUB_opc =>
+			unit := ALU_UNIT;
+			alu_rs_v.op := alu_pack.SUB_op;
+			alu_rs_v.common := rs_common_3;
+		when AND_opc =>
+			unit := ALU_UNIT;
+			alu_rs_v.op := alu_pack.AND_op;
+			alu_rs_v.common := rs_common_3;
+		when OR_opc =>
+			unit := ALU_UNIT;
+			alu_rs_v.op := alu_pack.OR_op;
+			alu_rs_v.common := rs_common_3;
+		when XOR_opc =>
+			unit := ALU_UNIT;
+			alu_rs_v.op := alu_pack.XOR_op;
+			alu_rs_v.common := rs_common_3;
+		when NOT_opc =>
+			unit := ALU_UNIT;
+			alu_rs_v.op := alu_pack.NOT_op;
+			alu_rs_v.common := rs_common_3;
+		when SLL_opc =>
+			unit := ALU_UNIT;
+			alu_rs_v.op := alu_pack.SLL_op;
+			alu_rs_v.common := rs_common_3;
+		when SRL_opc =>
+			unit := ALU_UNIT;
+			alu_rs_v.op := alu_pack.SRL_op;
+			alu_rs_v.common := rs_common_3;
+		when FADD_opc =>
+			unit := FPU_UNIT;
+			fpu_rs_v.op := fpu_pack.FADD_op;
+			fpu_rs_v.common := rs_common_3;
+		when FMUL_opc =>
+			unit := FPU_UNIT;
+			fpu_rs_v.op := fpu_pack.FMUL_op;
+			fpu_rs_v.common := rs_common_3;
+		when FDIV_opc =>
+			unit := FPU_UNIT;
+			fpu_rs_v.op := fpu_pack.FDIV_op;
+			fpu_rs_v.common := rs_common_3;
+		when FSIN_opc =>
+			unit := FPU_UNIT;
+			fpu_rs_v.op := fpu_pack.FSIN_op;
+			fpu_rs_v.common := rs_common_3;
+		when FCOS_opc =>
+			unit := FPU_UNIT;
+			fpu_rs_v.op := fpu_pack.FCOS_op;
+			fpu_rs_v.common := rs_common_3;
+		when FATAN_opc =>
+			unit := FPU_UNIT;
+			fpu_rs_v.op := fpu_pack.FATAN_op;
+			fpu_rs_v.common := rs_common_3;
+		when FSQRT_opc =>
+			unit := FPU_UNIT;
+			fpu_rs_v.op := fpu_pack.FSQRT_op;
+			fpu_rs_v.common := rs_common_3;
+		when FCMP_opc =>
+			unit := FPU_UNIT;
+			fpu_rs_v.op := fpu_pack.FCMP_op;
+			fpu_rs_v.common := rs_common_3;
+		when J_opc =>
+			unit := BRANCH_UNIT;
+			branch_rs_v.op := branch_pack.J_op;
+			branch_rs_v.common := (
+				ra => (data => zext_imm, tag => rs_tag_zero),
+				rb => register_zero,
+				state => RS_Waiting,
+				result => (others => '0'),
+				rt_num => r.decode_result.rt,
+				rob_num => r.rob.youngest,
+				pc => r.decode_result.pc,
+				pc_next => (others => '0')
+			);
+		when JR_opc =>
+			unit := BRANCH_UNIT;
+			branch_rs_v.op := branch_pack.JR_op;
+			branch_rs_v.common := (
+				ra => ra,
+				rb => register_zero,
+				state => RS_Waiting,
+				result => (others => '0'),
+				rt_num => x"FF",
+				rob_num => r.rob.youngest,
+				pc => r.decode_result.pc,
+				pc_next => (others => '0')
+			);
+		when JREQ_opc =>
+			unit := BRANCH_UNIT;
+			branch_rs_v.op := branch_pack.JREQ_op;
+			branch_rs_v.common := rs_common_3;
+		when JRNEQ_opc =>
+			unit := BRANCH_UNIT;
+			branch_rs_v.op := branch_pack.JRNEQ_op;
+			branch_rs_v.common := rs_common_3;
+		when JRGT_opc =>
+			unit := BRANCH_UNIT;
+			branch_rs_v.op := branch_pack.JRGT_op;
+			branch_rs_v.common := rs_common_3;
+		when JRGTE_opc =>
+			unit := BRANCH_UNIT;
+			branch_rs_v.op := branch_pack.JRGTE_op;
+			branch_rs_v.common := rs_common_3;
+		when JRLT_opc =>
+			unit := BRANCH_UNIT;
+			branch_rs_v.op := branch_pack.JRLT_op;
+			branch_rs_v.common := rs_common_3;
+		when JRLTE_opc =>
+			unit := BRANCH_UNIT;
+			branch_rs_v.op := branch_pack.JRLTE_op;
+			branch_rs_v.common := rs_common_3;
+		when STW_opc =>
+			unit := MEM_UNIT;
+			mem_rs_v.op := mem_pack.STORE_op;
+			mem_rs_v.common := (
+				ra => ra,
+				rb => rb,
+				state => RS_Waiting,
+				result => (others => '0'),
+				rt_num => r.decode_result.rt,
+				rob_num => r.rob.youngest,
+				pc => r.decode_result.pc,
+				pc_next => (others => '0')
+			);
+		when LDW_opc =>
+			unit := MEM_UNIT;
+			mem_rs_v.op := mem_pack.LOAD_op;
+			mem_rs_v.common := (
+				ra => ra,
+				rb => register_zero,
+				state => RS_Waiting,
+				result => (others => '0'),
+				rt_num => r.decode_result.rt,
+				rob_num => r.rob.youngest,
+				pc => r.decode_result.pc,
+				pc_next => (others => '0')
+			);
+		when NOP_opc =>
+			unit := NULL_UNIT;
+		when others =>
+		end case;
+--		read_regs(
+--			decode_result => r.decode_result,
+--			regs => r.registers,
+--			rob_array => v.rob.rob_array,
+--			rob_num => r.rob.youngest,
+--			unit => unit,
+--			alu_rs => alu_rs_v,
+--			fpu_rs => fpu_rs_v,
+--			mem_rs => mem_rs_v,
+--			branch_rs => branch_rs_v
+--		);
 		stall := rob_full(r.rob);
 		assert not stall report "rob full" severity note;
 		case unit is
@@ -650,7 +885,6 @@ begin
 				cdb => cdb_zero,
 				registers => v.registers,
 				pc => oldest_rob.pc_next,
-				program_memory => v.program_memory,
 				rob => rob_ring_buffer_zero,
 				state => CPU_NORMAL
 			);
