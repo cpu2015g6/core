@@ -9,5 +9,5 @@ add wave -radix hexadecimal sim:/cpu_top_tb/uut/alu_l/r
 add wave -radix hexadecimal sim:/cpu_top_tb/uut/branch_in
 add wave -radix hexadecimal sim:/cpu_top_tb/uut/branch_out
 add wave -radix hexadecimal sim:/cpu_top_tb/uut/branch_l/r
-#add wave sim:/cpu_top_tb/uut/comb/stall
+add wave sim:/cpu_top_tb/uut/comb/stall
 

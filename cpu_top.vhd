@@ -240,6 +240,7 @@ architecture twoproc of cpu_top is
 			decode_result.rt := rt_rev1;
 			decode_result.ra := ra_rev1;
 		when others => --undefined instruction
+			report "undefined instruction" severity warning;
 		end case;
 	end inst_decode;
 	function read_reg(
@@ -522,7 +523,7 @@ begin
 			r <= r_in;
 		end if;
 	end process;
-	process(r, alu_out, fpu_out, mem_out, branch_out)
+	comb : process(r, alu_out, fpu_out, mem_out, branch_out)
 		variable v : reg_type;
 		variable alu_in_v : alu_pack.in_type;
 		variable fpu_in_v : fpu_pack.in_type;
@@ -571,6 +572,7 @@ begin
 			branch_rs => branch_rs_v
 		);
 		stall := rob_full(r.rob);
+		assert not stall report "rob full" severity note;
 		case unit is
 			when ALU_UNIT =>
 				stall := stall or alu_out.rs_full = '1';
@@ -609,6 +611,7 @@ begin
 				v.rob.youngest := std_logic_vector(unsigned(r.rob.youngest) + 1);
 			end if;
 		end if;
+		assert not stall report "stall" severity note;
 		cdb_arbiter(
 			alu_cdb_out => alu_out.cdb_out,
 			fpu_cdb_out => fpu_out.cdb_out,
@@ -632,6 +635,7 @@ begin
 			v.rob.rob_array(to_integer(unsigned(v.rob.oldest))) := rob_zero;
 			v.rob.oldest := std_logic_vector(unsigned(v.rob.oldest) + 1);
 		elsif oldest_rob.state = ROB_Reset then
+			report "rob reset" severity note;
 			if oldest_rob.reg_num /= x"FF" then
 				v.registers(to_integer(unsigned(oldest_rob.reg_num))) := (
 					data => oldest_rob.result,
