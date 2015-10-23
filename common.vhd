@@ -1,12 +1,15 @@
 library ieee;
 use ieee.std_logic_1164.all;
 package common is
-	constant rs_num_width : integer := 3;
+	constant rs_num_width : integer := 2;
 	subtype rs_num_type is std_logic_vector(rs_num_width-1 downto 0);
 	constant pc_width : integer := 14;
 	subtype pc_type is std_logic_vector(pc_width-1 downto 0);
-	constant rob_num_width : integer := 5;
+	constant rob_num_width : integer := 4;
 	subtype rob_num_type is std_logic_vector(rob_num_width-1 downto 0);
+	constant reg_num_width : integer := 6;
+	subtype reg_num_type is std_logic_vector(reg_num_width-1 downto 0);
+	constant reg_num_zero : reg_num_type := (others => '1');
 	type opc_type is (NOP_opc, LIMM_opc, CMP_opc, IN_opc, OUT_opc, J_opc, JR_opc, JREQ_opc, JRNEQ_opc, JRGT_opc, JRGTE_opc, JRLT_opc, JRLTE_opc, STW_opc, LDW_opc, ADD_opc, SUB_opc, AND_opc, OR_opc, XOR_opc, NOT_opc, SLL_opc, SRL_opc, FADD_opc, FMUL_opc, FDIV_opc, FSIN_opc, FCOS_opc, FATAN_opc, FSQRT_opc, FCMP_opc);
 	type unit_type is (ALU_UNIT, FPU_UNIT, MEM_UNIT, BRANCH_UNIT, NULL_UNIT);
 	constant gt_const : std_logic_vector(31 downto 0) := x"00000002";
@@ -23,13 +26,13 @@ package common is
 	);
 	type decode_result_type is record
 		opc : opc_type;
-		rt, ra, rb : std_logic_vector(7 downto 0);
+		rt, ra, rb : reg_num_type;
 		imm : std_logic_vector(15 downto 0);
 		pc, pc_predicted : pc_type;
 	end record;
 	constant decode_result_zero : decode_result_type := (
 		NOP_opc,
-		(others => '1'), (others => '1'), (others => '1'),
+		reg_num_zero, reg_num_zero, reg_num_zero,
 		(others => '0'),
 		(others => '0'), (others => '0')
 	);
@@ -41,19 +44,17 @@ package common is
 		(others => '0'),
 		rs_tag_zero
 	);
-	type register_array_type is array (0 to 255) of register_type;
+	type register_array_type is array (0 to 2**reg_num_width-1) of register_type;
 	constant register_array_zero : register_array_type := (others => register_zero);
 	--common data bus
 	type cdb_type is record
 		data : std_logic_vector(31 downto 0);
 		tag : rs_tag_type;
-		reg_num : std_logic_vector(7 downto 0);
 		pc_next : pc_type;
 	end record;
 	constant cdb_zero : cdb_type := (
 		(others => '0'),
 		rs_tag_zero,
-		(others => '0'),
 		(others => '0')
 	);
 	type rs_state_type is (RS_Invalid, RS_Waiting, RS_Executing, RS_Done, RS_Reserved);
@@ -61,14 +62,12 @@ package common is
 		state : rs_state_type;
 		ra, rb : register_type;
 		result : std_logic_vector(31 downto 0);
-		rt_num : std_logic_vector(7 downto 0);
 		rob_num : rob_num_type;
 		pc, pc_next : pc_type;
 	end record;
 	constant rs_common_zero : rs_common_type := (
 		RS_Invalid,
 		register_zero, register_zero,
-		(others => '0'),
 		(others => '0'),
 		(others => '0'),
 		(others => '0'), (others => '0')
@@ -83,7 +82,7 @@ package common is
 		state : rob_state_type;
 		pc_next : pc_type;
 		result : std_logic_vector(31 downto 0);
-		reg_num : std_logic_vector(7 downto 0);
+		reg_num : reg_num_type;
 	end record;
 	constant rob_zero : rob_type := (
 		ROB_Invalid,
@@ -117,7 +116,6 @@ package body common is
 				valid => '1',
 				rob_num => rs_common.rob_num
 			),
-			reg_num => rs_common.rt_num,
 			data => rs_common.result,
 			pc_next => rs_common.pc_next
 		);

@@ -146,9 +146,12 @@ architecture twoproc of cpu_top is
 		inst : in std_logic_vector(31 downto 0);
 		decode_result : out decode_result_type) is
 		alias opc_rev1 : std_logic_vector(7 downto 0) is inst(31 downto 24);
-		alias rt_rev1 : std_logic_vector(7 downto 0) is inst(23 downto 16);
-		alias ra_rev1 : std_logic_vector(7 downto 0) is inst(15 downto 8);
-		alias rb_rev1 : std_logic_vector(7 downto 0) is inst(7 downto 0);
+--		alias rt_rev1 : std_logic_vector(7 downto 0) is inst(23 downto 16);
+--		alias ra_rev1 : std_logic_vector(7 downto 0) is inst(15 downto 8);
+--		alias rb_rev1 : std_logic_vector(7 downto 0) is inst(7 downto 0);
+		alias rt_rev1 : std_logic_vector(reg_num_width-1 downto 0) is inst(15+reg_num_width downto 16);
+		alias ra_rev1 : std_logic_vector(reg_num_width-1 downto 0) is inst(7+reg_num_width downto 8);
+		alias rb_rev1 : std_logic_vector(reg_num_width-1 downto 0) is inst(reg_num_width-1 downto 0);
 		alias imm_rev1 : std_logic_vector(15 downto 0) is inst(15 downto 0);
 --		alias opc_rev2 : std_logic_vector(5 downto 0) is inst(31 downto 26);
 	begin
@@ -291,7 +294,7 @@ architecture twoproc of cpu_top is
 		end case;
 	end inst_decode;
 	function read_reg(
-		reg_num : std_logic_vector(7 downto 0);
+		reg_num : reg_num_type;
 		regs : register_array_type;
 		rob_array : rob_array_type
 	) return register_type is
@@ -304,211 +307,12 @@ architecture twoproc of cpu_top is
 		if reg.tag.valid = '1' and rob_array(rob_i).state = ROB_Done then
 			reg := (data => rob_array(rob_i).result, tag => rs_tag_zero);
 		end if;
-		if reg_num = x"FF" then
+		if reg_num = reg_num_zero then
 			return register_zero;
 		else
 			return reg;
 		end if;
 	end read_reg;
--- http://japan.xilinx.com/support/answers/23475.html
---	alias alu_rs_type is alu_pack.rs_type;
---	alias fpu_rs_type is fpu_pack.rs_type;
---	alias mem_rs_type is mem_pack.rs_type;
---	alias branch_rs_type is branch_pack.rs_type;
---	procedure read_regs(
---		decode_result : in decode_result_type;
---		regs : in register_array_type;
---		rob_array : in rob_array_type;
---		rob_num : in rob_num_type;
---		unit : out unit_type;
---		alu_rs : out alu_rs_type;
---		fpu_rs : out fpu_rs_type;
---		mem_rs : out mem_rs_type;
---		branch_rs : out branch_rs_type) is
---	variable ra, rb : register_type;
---	variable rs_common_3 : rs_common_type;
---	variable zext_imm : std_logic_vector(31 downto 0);
---	begin
---		ra := read_reg(decode_result.ra, regs, rob_array);
---		rb := read_reg(decode_result.rb, regs, rob_array);
---		alu_rs := alu_pack.rs_zero;
---		fpu_rs := fpu_pack.rs_zero;
---		mem_rs := mem_pack.rs_zero;
---		branch_rs := branch_pack.rs_zero;
---		zext_imm := x"0000" & decode_result.imm;
---		rs_common_3 := (
---			ra => ra,
---			rb => rb,
---			state => RS_Waiting,
---			result => (others => '0'),
---			rt_num => decode_result.rt,
---			rob_num => rob_num,
---			pc => decode_result.pc,
---			pc_next => (others => '0')
---		);
---		case decode_result.opc is
---		when LIMM_opc =>
---			unit := ALU_UNIT;
---			alu_rs.op := alu_pack.LIMM_op;
---			alu_rs.common := (
---				ra => (data => zext_imm, tag => rs_tag_zero),
---				rb => register_zero,
---				state => RS_Waiting,
---				result => (others => '0'),
---				rt_num => decode_result.rt,
---				rob_num => rob_num,
---				pc => decode_result.pc,
---				pc_next => (others => '0')
---			);
---		when CMP_opc =>
---			unit := ALU_UNIT;
---			alu_rs.op := alu_pack.CMP_op;
---			alu_rs.common := rs_common_3;
---		when ADD_opc =>
---			unit := ALU_UNIT;
---			alu_rs.op := alu_pack.ADD_op;
---			alu_rs.common := rs_common_3;
---		when SUB_opc =>
---			unit := ALU_UNIT;
---			alu_rs.op := alu_pack.SUB_op;
---			alu_rs.common := rs_common_3;
---		when AND_opc =>
---			unit := ALU_UNIT;
---			alu_rs.op := alu_pack.AND_op;
---			alu_rs.common := rs_common_3;
---		when OR_opc =>
---			unit := ALU_UNIT;
---			alu_rs.op := alu_pack.OR_op;
---			alu_rs.common := rs_common_3;
---		when XOR_opc =>
---			unit := ALU_UNIT;
---			alu_rs.op := alu_pack.XOR_op;
---			alu_rs.common := rs_common_3;
---		when NOT_opc =>
---			unit := ALU_UNIT;
---			alu_rs.op := alu_pack.NOT_op;
---			alu_rs.common := rs_common_3;
---		when SLL_opc =>
---			unit := ALU_UNIT;
---			alu_rs.op := alu_pack.SLL_op;
---			alu_rs.common := rs_common_3;
---		when SRL_opc =>
---			unit := ALU_UNIT;
---			alu_rs.op := alu_pack.SRL_op;
---			alu_rs.common := rs_common_3;
---		when FADD_opc =>
---			unit := FPU_UNIT;
---			fpu_rs.op := fpu_pack.FADD_op;
---			fpu_rs.common := rs_common_3;
---		when FMUL_opc =>
---			unit := FPU_UNIT;
---			fpu_rs.op := fpu_pack.FMUL_op;
---			fpu_rs.common := rs_common_3;
---		when FDIV_opc =>
---			unit := FPU_UNIT;
---			fpu_rs.op := fpu_pack.FDIV_op;
---			fpu_rs.common := rs_common_3;
---		when FSIN_opc =>
---			unit := FPU_UNIT;
---			fpu_rs.op := fpu_pack.FSIN_op;
---			fpu_rs.common := rs_common_3;
---		when FCOS_opc =>
---			unit := FPU_UNIT;
---			fpu_rs.op := fpu_pack.FCOS_op;
---			fpu_rs.common := rs_common_3;
---		when FATAN_opc =>
---			unit := FPU_UNIT;
---			fpu_rs.op := fpu_pack.FATAN_op;
---			fpu_rs.common := rs_common_3;
---		when FSQRT_opc =>
---			unit := FPU_UNIT;
---			fpu_rs.op := fpu_pack.FSQRT_op;
---			fpu_rs.common := rs_common_3;
---		when FCMP_opc =>
---			unit := FPU_UNIT;
---			fpu_rs.op := fpu_pack.FCMP_op;
---			fpu_rs.common := rs_common_3;
---		when J_opc =>
---			unit := BRANCH_UNIT;
---			branch_rs.op := branch_pack.J_op;
---			branch_rs.common := (
---				ra => (data => zext_imm, tag => rs_tag_zero),
---				rb => register_zero,
---				state => RS_Waiting,
---				result => (others => '0'),
---				rt_num => decode_result.rt,
---				rob_num => rob_num,
---				pc => decode_result.pc,
---				pc_next => (others => '0')
---			);
---		when JR_opc =>
---			unit := BRANCH_UNIT;
---			branch_rs.op := branch_pack.JR_op;
---			branch_rs.common := (
---				ra => ra,
---				rb => register_zero,
---				state => RS_Waiting,
---				result => (others => '0'),
---				rt_num => x"FF",
---				rob_num => rob_num,
---				pc => decode_result.pc,
---				pc_next => (others => '0')
---			);
---		when JREQ_opc =>
---			unit := BRANCH_UNIT;
---			branch_rs.op := branch_pack.JREQ_op;
---			branch_rs.common := rs_common_3;
---		when JRNEQ_opc =>
---			unit := BRANCH_UNIT;
---			branch_rs.op := branch_pack.JRNEQ_op;
---			branch_rs.common := rs_common_3;
---		when JRGT_opc =>
---			unit := BRANCH_UNIT;
---			branch_rs.op := branch_pack.JRGT_op;
---			branch_rs.common := rs_common_3;
---		when JRGTE_opc =>
---			unit := BRANCH_UNIT;
---			branch_rs.op := branch_pack.JRGTE_op;
---			branch_rs.common := rs_common_3;
---		when JRLT_opc =>
---			unit := BRANCH_UNIT;
---			branch_rs.op := branch_pack.JRLT_op;
---			branch_rs.common := rs_common_3;
---		when JRLTE_opc =>
---			unit := BRANCH_UNIT;
---			branch_rs.op := branch_pack.JRLTE_op;
---			branch_rs.common := rs_common_3;
---		when STW_opc =>
---			unit := MEM_UNIT;
---			mem_rs.op := mem_pack.STORE_op;
---			mem_rs.common := (
---				ra => ra,
---				rb => rb,
---				state => RS_Waiting,
---				result => (others => '0'),
---				rt_num => decode_result.rt,
---				rob_num => rob_num,
---				pc => decode_result.pc,
---				pc_next => (others => '0')
---			);
---		when LDW_opc =>
---			unit := MEM_UNIT;
---			mem_rs.op := mem_pack.LOAD_op;
---			mem_rs.common := (
---				ra => ra,
---				rb => register_zero,
---				state => RS_Waiting,
---				result => (others => '0'),
---				rt_num => decode_result.rt,
---				rob_num => rob_num,
---				pc => decode_result.pc,
---				pc_next => (others => '0')
---			);
---		when NOP_opc =>
---			unit := NULL_UNIT;
---		when others =>
---		end case;
---	end read_regs;
 	procedure cdb_arbiter(
 		alu_cdb_out, fpu_cdb_out, mem_cdb_out, branch_cdb_out : in cdb_type;
 		alu_grant, fpu_grant, mem_grant, branch_grant : out std_logic;
@@ -542,7 +346,7 @@ architecture twoproc of cpu_top is
 		new_rob_array := rob_array;
 		rob_i := to_integer(unsigned(cdb.tag.rob_num));
 		if cdb.tag.valid = '1' then
-			if cdb.reg_num /= x"FF" then
+			if rob_array(rob_i).reg_num /= reg_num_zero then
 				new_rob_array(rob_i).result := cdb.data;
 			end if;
 			new_rob_array(rob_i).state := ROB_Done;
@@ -596,7 +400,6 @@ begin
 	begin
 		v := r;
 		alu_in_v := alu_pack.in_zero;
-		alu_in_v.rs_in.op := alu_pack.ADD_op;
 		fpu_in_v := fpu_pack.in_zero;
 		mem_in_v := mem_pack.in_zero;
 		branch_in_v := branch_pack.in_zero;
@@ -615,7 +418,7 @@ begin
 		);
 		decode_result_v.pc := r.pc;
 		decode_result_v.pc_predicted := next_pc;
-		-- read register and issue
+		-- read registers and issue
 		ra := read_reg(r.decode_result.ra, r.registers, v.rob.rob_array);
 		rb := read_reg(r.decode_result.rb, r.registers, v.rob.rob_array);
 		alu_rs_v := alu_pack.rs_zero;
@@ -628,7 +431,6 @@ begin
 			rb => rb,
 			state => RS_Waiting,
 			result => (others => '0'),
-			rt_num => r.decode_result.rt,
 			rob_num => r.rob.youngest,
 			pc => r.decode_result.pc,
 			pc_next => (others => '0')
@@ -642,7 +444,6 @@ begin
 				rb => register_zero,
 				state => RS_Waiting,
 				result => (others => '0'),
-				rt_num => r.decode_result.rt,
 				rob_num => r.rob.youngest,
 				pc => r.decode_result.pc,
 				pc_next => (others => '0')
@@ -723,7 +524,6 @@ begin
 				rb => register_zero,
 				state => RS_Waiting,
 				result => (others => '0'),
-				rt_num => r.decode_result.rt,
 				rob_num => r.rob.youngest,
 				pc => r.decode_result.pc,
 				pc_next => (others => '0')
@@ -736,7 +536,6 @@ begin
 				rb => register_zero,
 				state => RS_Waiting,
 				result => (others => '0'),
-				rt_num => x"FF",
 				rob_num => r.rob.youngest,
 				pc => r.decode_result.pc,
 				pc_next => (others => '0')
@@ -773,7 +572,6 @@ begin
 				rb => rb,
 				state => RS_Waiting,
 				result => (others => '0'),
-				rt_num => r.decode_result.rt,
 				rob_num => r.rob.youngest,
 				pc => r.decode_result.pc,
 				pc_next => (others => '0')
@@ -786,7 +584,6 @@ begin
 				rb => register_zero,
 				state => RS_Waiting,
 				result => (others => '0'),
-				rt_num => r.decode_result.rt,
 				rob_num => r.rob.youngest,
 				pc => r.decode_result.pc,
 				pc_next => (others => '0')
@@ -795,17 +592,6 @@ begin
 			unit := NULL_UNIT;
 		when others =>
 		end case;
---		read_regs(
---			decode_result => r.decode_result,
---			regs => r.registers,
---			rob_array => v.rob.rob_array,
---			rob_num => r.rob.youngest,
---			unit => unit,
---			alu_rs => alu_rs_v,
---			fpu_rs => fpu_rs_v,
---			mem_rs => mem_rs_v,
---			branch_rs => branch_rs_v
---		);
 		stall := rob_full(r.rob);
 		assert not stall report "rob full" severity note;
 		case unit is
@@ -837,7 +623,7 @@ begin
 					result => (others => '0'),
 					reg_num => r.decode_result.rt
 				);
-				if r.decode_result.rt /= x"FF" then
+				if r.decode_result.rt /= reg_num_zero then
 					v.registers(to_integer(unsigned(r.decode_result.rt))).tag := (
 						valid => '1',
 						rob_num => r.rob.youngest
@@ -861,7 +647,7 @@ begin
 		-- commit ROB
 		oldest_rob := v.rob.rob_array(to_integer(unsigned(v.rob.oldest)));
 		if oldest_rob.state = ROB_Done then
-			if oldest_rob.reg_num /= x"FF" then
+			if oldest_rob.reg_num /= reg_num_zero then
 				v.registers(to_integer(unsigned(oldest_rob.reg_num))) := (
 					data => oldest_rob.result,
 					tag =>rs_tag_zero
@@ -871,7 +657,7 @@ begin
 			v.rob.oldest := std_logic_vector(unsigned(v.rob.oldest) + 1);
 		elsif oldest_rob.state = ROB_Reset then
 			report "rob reset" severity note;
-			if oldest_rob.reg_num /= x"FF" then
+			if oldest_rob.reg_num /= reg_num_zero then
 				v.registers(to_integer(unsigned(oldest_rob.reg_num))) := (
 					data => oldest_rob.result,
 					tag =>rs_tag_zero
