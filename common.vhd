@@ -165,10 +165,12 @@ package fpu_pack is
 	type op_type is (FADD_op, FMUL_op, FDIV_op, FSIN_op, FCOS_op, FATAN_op, FSQRT_op, FCMP_op, NOP_op);
 	type rs_type is record
 		op : op_type;
+		countdown : std_logic_vector(2 downto 0);
 		common : rs_common_type;
 	end record;
 	constant rs_zero : rs_type := (
 		NOP_op,
+		(others => '0'),
 		rs_common_zero
 	);
 	type rs_array_type is array (0 to 2**rs_num_width-1) of rs_type;

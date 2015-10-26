@@ -590,6 +590,8 @@ begin
 			);
 		when NOP_opc =>
 			unit := NULL_UNIT;
+		when IN_opc =>
+		when OUT_opc =>
 		when others =>
 		end case;
 		stall := rob_full(r.rob);
