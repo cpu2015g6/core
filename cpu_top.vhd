@@ -40,7 +40,9 @@ use work.all;
 
 entity cpu_top is
 	port(
-		clk, rst : in std_logic
+		clk, rst : in std_logic;
+		cpu_top_in : in cpu_top_in_type;
+		cpu_top_out : out cpu_top_out_type
 	);
 end cpu_top;
 
@@ -378,7 +380,7 @@ begin
 			r <= r_in;
 		end if;
 	end process;
-	comb : process(r, alu_out, fpu_out, mem_out, branch_out, bram_dout)
+	comb : process(r, alu_out, fpu_out, mem_out, branch_out, bram_dout, cpu_top_in)
 		variable v : reg_type;
 		variable alu_in_v : alu_pack.in_type;
 		variable fpu_in_v : fpu_pack.in_type;

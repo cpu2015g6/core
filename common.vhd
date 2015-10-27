@@ -90,6 +90,60 @@ package common is
 		(others => '0'),
 		(others => '0')
 	);
+	type sramif_op is (SRAM_NOP, SRAM_LOAD, SRAM_STORE);
+	type sramif_in is record
+		op : sramif_op;
+		addr : std_logic_vector(19 downto 0);
+		wd : std_logic_vector(31 downto 0);
+	end record;
+	constant sramif_in_zero : sramif_in := (
+		op => SRAM_NOP,
+		addr => (others => '0'),
+		wd => (others => '0')
+	);
+	type sramif_out is record
+		data_enable : std_logic;
+		rd : std_logic_vector(31 downto 0);
+	end record;
+	type recvif_in_type is record
+		rd_en : std_logic;
+	end record;
+	constant recvif_in_zero : recvif_in_type := (
+		rd_en => '0'
+	);
+	type recvif_out_type is record
+		dout : std_logic_vector(7 downto 0);
+		full, empty : std_logic;
+	end record;
+	constant recvif_out_zero : recvif_out_type := (
+		dout => (others => '0'),
+		full => '0',
+		empty => '0'
+	);
+	type transif_in_type is record
+		wr_en : std_logic;
+		din : std_logic_vector(7 downto 0);
+	end record;
+	constant transif_in_zero : transif_in_type := (
+		wr_en => '0',
+		din => (others => '0')
+	);
+	type transif_out_type is record
+		full : std_logic;
+	end record;
+	constant transif_out_zero : transif_out_type := (
+		full => '0'
+	);
+	type cpu_top_in_type is record
+		sramifout : sramif_out;
+		recvifout : recvif_out_type;
+		transifout : transif_out_type;
+	end record;
+	type cpu_top_out_type is record
+		sramifin : sramif_in;
+		recvifin : recvif_in_type;
+		transifin : transif_in_type;
+	end record;
 	function register_update(reg : register_type; cdb : cdb_type) return register_type;
 	function make_cdb_out(rs_common : rs_common_type) return cdb_type;
 end common;

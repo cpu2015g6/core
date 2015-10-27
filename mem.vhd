@@ -39,6 +39,7 @@ begin
 	process(mem_in, r)
 		variable v : reg_type;
 		variable exec_complete : boolean;
+		variable t : rs_common_type;
 	begin
 		-- update rs
 		for i in r.rs'range loop
@@ -47,7 +48,8 @@ begin
 		end loop;
 		-- execute
 		exec_complete := false;
-		if rs_common_ready(v.rs(to_integer(unsigned(r.rs_exec))).common) then
+		t := v.rs(to_integer(unsigned(r.rs_exec))).common;
+		if rs_common_ready(t) then
 			if exec_complete then
 				v.rs_exec := std_logic_vector(unsigned(r.rs_exec) + 1);
 			end if;
@@ -65,7 +67,8 @@ begin
 			end if;
 			v.cdb_out := cdb_zero;
 			if v.rs(to_integer(unsigned(v.rs_oldest))).common.state = RS_Done then
-				v.cdb_out := make_cdb_out(v.rs(to_integer(unsigned(v.rs_oldest))).common);
+				t := v.rs(to_integer(unsigned(v.rs_oldest))).common;
+				v.cdb_out := make_cdb_out(t);
 			end if;
 		end if;
 		-- synchronous reset

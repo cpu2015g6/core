@@ -26,7 +26,9 @@ architecture twoproc of fpu is
 	       ans:       out std_logic_vector(31 downto 0) := x"00000000"
 	       );
 	end component;
-	component finv is
+	signal fmul_op1, fmul_op2 : std_logic_vector(31 downto 0) := (others => '0');
+	signal fmul_ans : std_logic_vector(31 downto 0);
+	component fsqrt is
 	  port(clk:       in std_logic;
 	       op:        in std_logic_vector(31 downto 0);
 	       ans:       out std_logic_vector(31 downto 0) := x"00000000"
@@ -59,6 +61,13 @@ begin
 		op2 => fadd_op2,
 		ans => fadd_ans
 	);
+	fmul_l : fmul
+	port map(
+		clk => clk,
+		op1 => fmul_op1,
+		op2 => fmul_op2,
+		ans => fmul_ans
+	);
 	process(clk, rst)
 	begin
 		if rst = '1' then
@@ -67,12 +76,14 @@ begin
 			r <= r_in;
 		end if;
 	end process;
-	process(fpu_in, r, fadd_ans)
+	process(fpu_in, r, fadd_ans, fmul_ans)
 		variable v : reg_type;
 		variable ra_data : std_logic_vector(31 downto 0);
 		variable rb_data : std_logic_vector(31 downto 0);
 		variable fadd_used : boolean;
 		variable fadd_op1_v, fadd_op2_v : std_logic_vector(31 downto 0);
+		variable fmul_used : boolean;
+		variable fmul_op1_v, fmul_op2_v : std_logic_vector(31 downto 0);
 	begin
 		v := r;
 		-- update rs
@@ -82,6 +93,7 @@ begin
 		end loop;
 		-- execute
 		fadd_used := false;
+		fmul_used := false;
 		for i in v.rs'range loop
 			if rs_common_ready(v.rs(i).common) then
 				ra_data := v.rs(i).common.ra.data;
@@ -93,10 +105,16 @@ begin
 							fadd_op2_v := rb_data;
 							fadd_used := true;
 							v.rs(i).common.state := RS_Executing;
-							v.rs(i).countdown := "010";
+							v.rs(i).countdown := "000";
 						end if;
 					when FMUL_op =>
-						report "not implemented" severity error;
+						if not fmul_used then
+							fmul_op1_v := ra_data;
+							fmul_op2_v := rb_data;
+							fmul_used := true;
+							v.rs(i).common.state := RS_Executing;
+							v.rs(i).countdown := "000";
+						end if;
 					when FDIV_op =>
 						report "not implemented" severity error;
 					when FSIN_op =>
@@ -120,6 +138,9 @@ begin
 					when FADD_op =>
 						v.rs(i).common.result := fadd_ans;
 						v.rs(i).common.state := RS_Done;
+					when FMUL_op =>
+						v.rs(i).common.result := fmul_ans;
+						v.rs(i).common.state := RS_Done;
 					when others =>
 				end case;
 				else
@@ -133,6 +154,13 @@ begin
 		else
 			fadd_op1 <= (others => '0');
 			fadd_op2 <= (others => '0');
+		end if;
+		if fmul_used then
+			fmul_op1 <= fmul_op1_v;
+			fmul_op2 <= fmul_op2_v;
+		else
+			fmul_op1 <= (others => '0');
+			fmul_op2 <= (others => '0');
 		end if;
 		-- store new rs contents
 		if r.rs_full = '0' and fpu_in.rs_in.op /= NOP_op then

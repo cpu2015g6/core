@@ -12,4 +12,4 @@ force -deposit sim:/cpu_top_tb/uut/bram_l/ram(10) 16#e30203ff 0
 force -deposit sim:/cpu_top_tb/uut/bram_l/ram(11) 16#e30304ff 0
 force -deposit sim:/cpu_top_tb/uut/bram_l/ram(12) 16#d4fffff9 0
 force -deposit sim:/cpu_top_tb/uut/bram_l/ram(13) 16#d51010ff 0
-force -deposit sim:/cpu_top_tb/uut/bram_l/ram(14) 16#d4020000 9
+force -deposit sim:/cpu_top_tb/uut/bram_l/ram(14) 16#d4020000 0
