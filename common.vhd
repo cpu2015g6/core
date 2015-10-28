@@ -105,6 +105,10 @@ package common is
 		data_enable : std_logic;
 		rd : std_logic_vector(31 downto 0);
 	end record;
+	constant sramif_out_zero : sramif_out := (
+		'0',
+		(others => '0')
+	);
 	type recvif_in_type is record
 		rd_en : std_logic;
 	end record;

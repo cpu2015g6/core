@@ -26,6 +26,7 @@ architecture twoproc of top is
 		);
 	end component;
 	component sramif is
+		generic(sim : boolean := false);
 		port(
 			clk, rst : in std_logic;
 			ZD : inout std_logic_vector(31 downto 0);

@@ -652,20 +652,19 @@ begin
 		oldest_rob := v.rob.rob_array(to_integer(unsigned(v.rob.oldest)));
 		if oldest_rob.state = ROB_Done then
 			if oldest_rob.reg_num /= reg_num_zero then
-				v.registers(to_integer(unsigned(oldest_rob.reg_num))) := (
-					data => oldest_rob.result,
-					tag =>rs_tag_zero
-				);
+				assert v.registers(to_integer(unsigned(oldest_rob.reg_num))).tag.valid = '1' report "BUG @ register write reservation";
+				v.registers(to_integer(unsigned(oldest_rob.reg_num))).data := oldest_rob.result;
+				if v.registers(to_integer(unsigned(oldest_rob.reg_num))).tag.rob_num = v.rob.oldest then
+					v.registers(to_integer(unsigned(oldest_rob.reg_num))).tag := rs_tag_zero;
+				end if;
 			end if;
 			v.rob.rob_array(to_integer(unsigned(v.rob.oldest))) := rob_zero;
 			v.rob.oldest := std_logic_vector(unsigned(v.rob.oldest) + 1);
 		elsif oldest_rob.state = ROB_Reset then
 			report "rob reset" severity note;
 			if oldest_rob.reg_num /= reg_num_zero then
-				v.registers(to_integer(unsigned(oldest_rob.reg_num))) := (
-					data => oldest_rob.result,
-					tag =>rs_tag_zero
-				);
+				assert v.registers(to_integer(unsigned(oldest_rob.reg_num))).tag.valid = '1' report "BUG @ register write reservation";
+				v.registers(to_integer(unsigned(oldest_rob.reg_num))).data := oldest_rob.result;
 			end if;
 			for i in v.registers'range loop
 				v.registers(i).tag := rs_tag_zero;

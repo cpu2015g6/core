@@ -27,6 +27,7 @@
 --------------------------------------------------------------------------------
 LIBRARY ieee;
 USE ieee.std_logic_1164.ALL;
+use work.common.all;
  
 -- Uncomment the following library declaration if using
 -- arithmetic functions with Signed or Unsigned values
@@ -42,7 +43,9 @@ ARCHITECTURE behavior OF cpu_top_tb IS
     COMPONENT cpu_top
     PORT(
          clk : IN  std_logic;
-         rst : IN  std_logic
+         rst : IN  std_logic;
+		cpu_top_in : in cpu_top_in_type;
+		cpu_top_out : out cpu_top_out_type
         );
     END COMPONENT;
     
@@ -50,6 +53,13 @@ ARCHITECTURE behavior OF cpu_top_tb IS
    --Inputs
    signal clk : std_logic := '0';
    signal rst : std_logic := '0';
+   signal cpu_top_in : cpu_top_in_type := (
+   	sramifout => sramif_out_zero,
+   	transifout => transif_out_zero,
+   	recvifout => recvif_out_zero
+   );
+   --Outputs
+   signal cpu_top_out : cpu_top_out_type;
 
    -- Clock period definitions
    constant clk_period : time := 10 ns;
@@ -59,7 +69,9 @@ BEGIN
 	-- Instantiate the Unit Under Test (UUT)
    uut: cpu_top PORT MAP (
           clk => clk,
-          rst => rst
+          rst => rst,
+		  cpu_top_in => cpu_top_in,
+		  cpu_top_out => cpu_top_out
         );
 
    -- Clock process definitions
