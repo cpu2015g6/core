@@ -62,18 +62,21 @@ architecture twoproc of top is
 	end component;
 	signal cpu_top_in : cpu_top_in_type;
 	signal cpu_top_out : cpu_top_out_type;
+	signal rst : std_logic := '0';
 begin
+	rst <= not XRST;
 	cpu_l : cpu_top
 	port map(
 		clk => MCLK1,
-		rst => not XRST,
+		rst => rst,
 		cpu_top_in => cpu_top_in,
 		cpu_top_out => cpu_top_out
 	);
 	sramif_l : sramif
+--	generic map(sim => true)
 	port map(
 		clk => MCLK1,
-		rst => not XRST,
+		rst => rst,
 		ZD => ZD,
 		ZA => ZA,
 		XWA => XWA,
@@ -96,7 +99,7 @@ begin
 	port map(
 		tx => RS_TX,
 		clk => MCLK1,
-		rst => not XRST,
+		rst => rst,
 		wr_en => cpu_top_out.transifin.wr_en,
 		din => cpu_top_out.transifin.din,
 		full => cpu_top_in.transifout.full
@@ -109,7 +112,7 @@ begin
 		full => cpu_top_in.recvifout.full,
 		empty => cpu_top_in.recvifout.empty,
 		clk => MCLK1,
-		rst => not XRST,
+		rst => rst,
 		rx => RS_RX
 	);
 end;

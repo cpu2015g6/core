@@ -29,12 +29,14 @@ package common is
 		rt, ra, rb : reg_num_type;
 		imm : std_logic_vector(15 downto 0);
 		pc, pc_predicted : pc_type;
+		need_dummy_rob_entry : std_logic;
 	end record;
 	constant decode_result_zero : decode_result_type := (
 		NOP_opc,
 		reg_num_zero, reg_num_zero, reg_num_zero,
 		(others => '0'),
-		(others => '0'), (others => '0')
+		(others => '0'), (others => '0'),
+		'0'
 	);
 	type register_type is record
 		data : std_logic_vector(31 downto 0);
@@ -77,7 +79,7 @@ package common is
 	-- ROB_Done : The result is available
 	-- ROB_Reset : CPU enters rollback mode due to a mispredicted branch and restarts execution from pc_next
 	-- Distinguishing faults, traps and aborts may be needed.
-	type rob_state_type is (ROB_Invalid, ROB_Executing, ROB_Done, ROB_Reset);
+	type rob_state_type is (ROB_Invalid, ROB_Executing, ROB_Done, ROB_Reset, ROB_Dummy);
 	type rob_type is record
 		state : rob_state_type;
 		pc_next : pc_type;
@@ -258,13 +260,17 @@ library ieee;
 use ieee.std_logic_1164.all;
 use work.common.all;
 package mem_pack is
-	type op_type is (LOAD_op, STORE_op, NOP_op);
+	type op_type is (IN_op, OUT_op, LOAD_op, STORE_op, NOP_op);
 	type rs_type is record
 		op : op_type;
+		has_dummy : std_logic;
+		countdown : std_logic_vector(2 downto 0);
 		common : rs_common_type;
 	end record;
 	constant rs_zero : rs_type := (
 		NOP_op,
+		'0',
+		(others => '0'),
 		rs_common_zero
 	);
 	type rs_array_type is array (0 to 2**rs_num_width-1) of rs_type;
@@ -273,20 +279,34 @@ package mem_pack is
 		cdb_in : cdb_type;
 		cdb_next : std_logic;-- set cdb_next = 1 when cdb_out is broadcasted
 		rst : std_logic;-- synchronous reset
+		dummy_done : std_logic;
+		sramifout : sramif_out;
+		recvifout : recvif_out_type;
+		transifout : transif_out_type;
 	end record;
 	constant in_zero : in_type := (
 		rs_zero,
 		cdb_zero,
 		'0',
-		'0'
+		'0',
+		'0',
+		sramif_out_zero,
+		recvif_out_zero,
+		transif_out_zero
 	);
 	type out_type is record
 		rs_full : std_logic;
 		cdb_out : cdb_type;
+		sramifin : sramif_in;
+		recvifin : recvif_in_type;
+		transifin : transif_in_type;
 	end record;
 	constant out_zero : out_type := (
 		'0',
-		cdb_zero
+		cdb_zero,
+		sramif_in_zero,
+		recvif_in_zero,
+		transif_in_zero
 	);
 end mem_pack;
 

@@ -17,7 +17,21 @@ end entity;
 
 architecture beh of blockram is
 	type ram_type is array(0 to 2**awidth-1) of std_logic_vector(dwidth-1 downto 0);
-	signal ram : ram_type := (others => (others => '0'));
+--	signal ram : ram_type := (others => (others => '0'));
+	signal ram : ram_type := (
+		0 => x"d0013f80",
+		1 => x"d0020010",
+		2 => x"e6010102",
+		3 => x"f9020101",
+		4 => x"f8020101",
+		5 => x"d002cafe",
+		6 => x"d8ff02ff",
+		7 => x"d902ffff",
+		8 => x"d302ffff",
+		9 => x"d201ffff",
+		10 => x"d301ffff",
+		others => (others => '0')
+	);
 	signal reg_addr : std_logic_vector(awidth-1 downto 0) := (others => '0');
 begin
 	process(clk)
@@ -171,9 +185,11 @@ architecture twoproc of cpu_top is
 		when x"D2" => --in
 			decode_result.opc := IN_opc;
 			decode_result.rt := rt_rev1;
+			decode_result.need_dummy_rob_entry := '1';
 		when x"D3" => --out
-			decode_result.opc := LIMM_opc;
+			decode_result.opc := OUT_opc;
 			decode_result.ra := rt_rev1;
+			decode_result.need_dummy_rob_entry := '1';
 		when x"D4" => --j
 			decode_result.opc := J_opc;
 			decode_result.rt := rt_rev1;
@@ -186,6 +202,7 @@ architecture twoproc of cpu_top is
 			decode_result.opc := STW_opc;
 			decode_result.ra := ra_rev1;
 			decode_result.rb := rt_rev1;
+			decode_result.need_dummy_rob_entry := '1';
 		when x"D9" => --ldw
 			decode_result.opc := LDW_opc;
 			decode_result.ra := ra_rev1;
@@ -361,6 +378,9 @@ architecture twoproc of cpu_top is
 	end update_ROB;
 begin
 	bram_addr <= r_in.pc;
+	cpu_top_out.sramifin <= mem_out.sramifin;
+	cpu_top_out.recvifin <= mem_out.recvifin;
+	cpu_top_out.transifin <= mem_out.transifin;
 	bram_l : blockram
 	generic map(awidth => pc_width, dwidth => 32)
 	port map(clk => clk, we => bram_we, din => bram_din, dout => bram_dout, addr => bram_addr);
@@ -399,6 +419,7 @@ begin
 		variable ra, rb : register_type;
 		variable rs_common_3 : rs_common_type;
 		variable zext_imm : std_logic_vector(31 downto 0);
+		variable insert_dummy_rob_entry : boolean;
 	begin
 		v := r;
 		alu_in_v := alu_pack.in_zero;
@@ -412,12 +433,18 @@ begin
 			inst => bram_dout,
 			decode_result => decode_result_v
 		);
+		if decode_result_v.need_dummy_rob_entry = '1' and r.decode_result.need_dummy_rob_entry = '1' then
+			decode_result_v.need_dummy_rob_entry := '0';
+		end if;
 		-- branch prediction
 		branch_predictor(
 			decode_result => decode_result_v,
 			pc => r.pc,
 			next_pc => next_pc
 		);
+		if decode_result_v.need_dummy_rob_entry = '1' then
+			next_pc := r.pc;
+		end if;
 		decode_result_v.pc := r.pc;
 		decode_result_v.pc_predicted := next_pc;
 		-- read registers and issue
@@ -569,6 +596,7 @@ begin
 		when STW_opc =>
 			unit := MEM_UNIT;
 			mem_rs_v.op := mem_pack.STORE_op;
+			mem_rs_v.has_dummy := '1';
 			mem_rs_v.common := (
 				ra => ra,
 				rb => rb,
@@ -593,9 +621,40 @@ begin
 		when NOP_opc =>
 			unit := NULL_UNIT;
 		when IN_opc =>
+			unit := MEM_UNIT;
+			mem_rs_v.op := mem_pack.IN_op;
+			mem_rs_v.has_dummy := '1';
+			mem_rs_v.common := (
+				ra => register_zero,
+				rb => register_zero,
+				state => RS_Waiting,
+				result => (others => '0'),
+				rob_num => r.rob.youngest,
+				pc => r.decode_result.pc,
+				pc_next => (others => '0')
+			);
 		when OUT_opc =>
+			unit := MEM_UNIT;
+			mem_rs_v.op := mem_pack.OUT_op;
+			mem_rs_v.has_dummy := '1';
+			mem_rs_v.common := (
+				ra => ra,
+				rb => register_zero,
+				state => RS_Waiting,
+				result => (others => '0'),
+				rob_num => r.rob.youngest,
+				pc => r.decode_result.pc,
+				pc_next => (others => '0')
+			);
 		when others =>
 		end case;
+		if r.decode_result.need_dummy_rob_entry = '1' then
+			unit := NULL_UNIT;
+			alu_rs_v := alu_pack.rs_zero;
+			fpu_rs_v := fpu_pack.rs_zero;
+			mem_rs_v := mem_pack.rs_zero;
+			branch_rs_v := branch_pack.rs_zero;
+		end if;
 		stall := rob_full(r.rob);
 		assert not stall report "rob full" severity note;
 		case unit is
@@ -621,12 +680,21 @@ begin
 			mem_in_v.rs_in := mem_rs_v;
 			branch_in_v.rs_in := branch_rs_v;
 			if r.decode_result.opc /= NOP_opc then
-				v.rob.rob_array(to_integer(unsigned(r.rob.youngest))) := (
-					state => ROB_Executing,
-					pc_next => r.decode_result.pc_predicted,
-					result => (others => '0'),
-					reg_num => r.decode_result.rt
-				);
+				if r.decode_result.need_dummy_rob_entry = '1' then
+					v.rob.rob_array(to_integer(unsigned(r.rob.youngest))) := (
+						state => ROB_Dummy,
+						pc_next => r.decode_result.pc_predicted,
+						result => (others => '0'),
+						reg_num => reg_num_zero
+					);
+				else
+					v.rob.rob_array(to_integer(unsigned(r.rob.youngest))) := (
+						state => ROB_Executing,
+						pc_next => r.decode_result.pc_predicted,
+						result => (others => '0'),
+						reg_num => r.decode_result.rt
+					);
+				end if;
 				if r.decode_result.rt /= reg_num_zero then
 					v.registers(to_integer(unsigned(r.decode_result.rt))).tag := (
 						valid => '1',
@@ -650,7 +718,11 @@ begin
 		);
 		-- commit ROB
 		oldest_rob := v.rob.rob_array(to_integer(unsigned(v.rob.oldest)));
-		if oldest_rob.state = ROB_Done then
+		if oldest_rob.state = ROB_Dummy then
+			mem_in_v.dummy_done := '1';
+			v.rob.rob_array(to_integer(unsigned(v.rob.oldest))) := rob_zero;
+			v.rob.oldest := std_logic_vector(unsigned(v.rob.oldest) + 1);
+		elsif oldest_rob.state = ROB_Done then
 			if oldest_rob.reg_num /= reg_num_zero then
 				assert v.registers(to_integer(unsigned(oldest_rob.reg_num))).tag.valid = '1' report "BUG @ register write reservation";
 				v.registers(to_integer(unsigned(oldest_rob.reg_num))).data := oldest_rob.result;
@@ -685,7 +757,11 @@ begin
 		end if;
 		alu_in <= alu_in_v;
 		fpu_in <= fpu_in_v;
+		mem_in_v.sramifout := cpu_top_in.sramifout;
+		mem_in_v.recvifout := cpu_top_in.recvifout;
+		mem_in_v.transifout := cpu_top_in.transifout;
 		mem_in <= mem_in_v;
+--		mem_in <= mem_pack.in_zero;
 		branch_in <= branch_in_v;
 		r_in <= v;
 	end process;
