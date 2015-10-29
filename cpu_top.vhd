@@ -308,6 +308,11 @@ architecture twoproc of cpu_top is
 			decode_result.opc := FSQRT_opc;
 			decode_result.rt := rt_rev1;
 			decode_result.ra := ra_rev1;
+		when x"FF" => --fcmp
+			decode_result.opc := FCMP_opc;
+			decode_result.rt := rt_rev1;
+			decode_result.ra := ra_rev1;
+			decode_result.rb := rb_rev1;
 		when others => --undefined instruction
 			report "undefined instruction" severity warning;
 		end case;

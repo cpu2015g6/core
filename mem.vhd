@@ -25,9 +25,30 @@ architecture twoproc of mem is
 		cdb_zero
 	);
 	signal r, r_in : reg_type := reg_zero;
+	function rs_executing_update(rs : rs_type;load_in : std_logic_vector(31 downto 0);serial_in : std_logic_vector(7 downto 0)) return rs_type is
+		variable new_rs : rs_type;
+	begin
+		new_rs := rs;
+-- ERROR:Xst:1706, 1847
+		if rs.countdown = "000" then
+--		if false then
+			case rs.op is
+				when LOAD_op =>
+					new_rs.common.result := load_in;
+				when IN_op =>
+					new_rs.common.result := x"000000" & serial_in;
+				when others =>
+			end case;
+			new_rs.common.state := RS_Done;
+			new_rs.common.pc_next := std_logic_vector(unsigned(rs.common.pc) + 1);
+		else
+			new_rs.countdown := std_logic_vector(unsigned(rs.countdown) - 1);
+		end if;
+		return new_rs;
+	end rs_executing_update;
 begin
 	mem_out.cdb_out <= r.cdb_out;
-	mem_out.rs_full <= '1' when std_logic_vector(unsigned(r.rs_youngest)+1) = r.rs_oldest else '0';
+	mem_out.rs_full <= r.rs_full;
 	process(clk, rst)
 	begin
 		if rst = '1' then
@@ -43,57 +64,47 @@ begin
 		variable sramifin_v : sramif_in;
 		variable transifin_v : transif_in_type;
 		variable recvifin_v : recvif_in_type;
+		variable exec_i : integer;
 	begin
 		v := r;
 		-- update rs
 		for i in r.rs'range loop
 			v.rs(i).common.ra := register_update(r.rs(i).common.ra, mem_in.cdb_in);
 			v.rs(i).common.rb := register_update(r.rs(i).common.rb, mem_in.cdb_in);
-		end loop;
-		-- execute
-		for i in v.rs'range loop
 			if r.rs(i).common.state = RS_Executing then
--- ERROR:Xst:1706, 1847
---				if r.rs(i).countdown = "000" then
-				if false then
-					case r.rs(i).op is
-						when LOAD_op =>
-							v.rs(i).common.result := mem_in.sramifout.rd;
-						when IN_op =>
-							v.rs(i).common.result := x"000000" & mem_in.recvifout.dout;
-						when others =>
-					end case;
-					v.rs(i).common.state := RS_Done;
-					v.rs(i).common.pc_next := std_logic_vector(unsigned(v.rs(i).common.pc) + 1);
-				else
-					v.rs(i).countdown := std_logic_vector(unsigned(r.rs(i).countdown) - 1);
-				end if;
+				v.rs(i) := rs_executing_update(r.rs(i), mem_in.sramifout.rd, mem_in.recvifout.dout);
 			end if;
 		end loop;
 		exec_complete := false;
 		sramifin_v := sramif_in_zero;
 		recvifin_v := recvif_in_zero;
 		transifin_v := transif_in_zero;
-		t := v.rs(to_integer(unsigned(r.rs_exec))).common;
+		exec_i := to_integer(unsigned(r.rs_exec));
+		t := v.rs(exec_i).common;
 		if rs_common_ready(t) then
-			if v.rs(to_integer(unsigned(r.rs_exec))).has_dummy = '1' then
-				exec_complete := mem_in.dummy_done = '1';
+			if v.rs(exec_i).has_dummy = '1' then
+				if mem_in.dummy_done = '1' then
+					exec_complete := true;
+					v.rs(exec_i).has_dummy := '0'; -- this is effective when dummy_done = '1' and the execution cannot be done immidiately because the resources are busy
+				else
+					exec_complete := false;
+				end if;
 			else
 				exec_complete := true;
 			end if;
 			if exec_complete then
-				case v.rs(to_integer(unsigned(r.rs_exec))).op is
+				case v.rs(exec_i).op is
 				when LOAD_op =>
-					v.rs(to_integer(unsigned(r.rs_exec))).common.state := RS_Executing;
-					v.rs(to_integer(unsigned(r.rs_exec))).countdown := "010";
+					v.rs(exec_i).common.state := RS_Executing;
+					v.rs(exec_i).countdown := "010";
 					sramifin_v := (
 						op => SRAM_LOAD,
 						addr => t.ra.data(19 downto 0),
 						wd => (others => '0')
 					);
 				when STORE_op =>
-					v.rs(to_integer(unsigned(r.rs_exec))).common.state := RS_Done;
-					v.rs(to_integer(unsigned(r.rs_exec))).common.pc_next := std_logic_vector(unsigned(v.rs(to_integer(unsigned(r.rs_exec))).common.pc) + 1);
+					v.rs(exec_i).common.state := RS_Done;
+					v.rs(exec_i).common.pc_next := std_logic_vector(unsigned(t.pc) + 1);
 					sramifin_v := (
 						op => SRAM_STORE,
 						addr => t.rb.data(19 downto 0),
@@ -101,16 +112,16 @@ begin
 					);
 				when IN_op =>
 					if mem_in.recvifout.empty = '0' then
-						v.rs(to_integer(unsigned(r.rs_exec))).common.state := RS_Executing;
-						v.rs(to_integer(unsigned(r.rs_exec))).countdown := "000";
+						v.rs(exec_i).common.state := RS_Executing;
+						v.rs(exec_i).countdown := "000";
 						recvifin_v := (rd_en => '1');
 					else
 						exec_complete := false;
 					end if;
 				when OUT_op =>
 					if mem_in.transifout.full = '0' then
-						v.rs(to_integer(unsigned(r.rs_exec))).common.state := RS_Done;
-						v.rs(to_integer(unsigned(r.rs_exec))).common.pc_next := std_logic_vector(unsigned(v.rs(to_integer(unsigned(r.rs_exec))).common.pc) + 1);
+						v.rs(exec_i).common.state := RS_Done;
+						v.rs(exec_i).common.pc_next := std_logic_vector(unsigned(t.pc) + 1);
 						transifin_v := (
 							wr_en => '1',
 							din => t.ra.data(7 downto 0)
@@ -144,6 +155,11 @@ begin
 				t := v.rs(to_integer(unsigned(v.rs_oldest))).common;
 				v.cdb_out := make_cdb_out(t);
 			end if;
+		end if;
+		if std_logic_vector(unsigned(v.rs_youngest)+1) = v.rs_oldest then
+			v.rs_full := '1';
+		else
+			v.rs_full := '0';
 		end if;
 		-- synchronous reset
 		if mem_in.rst = '1' then
