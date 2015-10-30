@@ -7,7 +7,7 @@ package common is
 	subtype pc_type is std_logic_vector(pc_width-1 downto 0);
 	constant rob_num_width : integer := 4;
 	subtype rob_num_type is std_logic_vector(rob_num_width-1 downto 0);
-	constant reg_num_width : integer := 6;
+	constant reg_num_width : integer := 5;
 	subtype reg_num_type is std_logic_vector(reg_num_width-1 downto 0);
 	constant reg_num_zero : reg_num_type := (others => '1');
 	type opc_type is (NOP_opc, LIMM_opc, CMP_opc, IN_opc, OUT_opc, J_opc, JR_opc, JREQ_opc, JRNEQ_opc, JRGT_opc, JRGTE_opc, JRLT_opc, JRLTE_opc, STW_opc, LDW_opc, ADD_opc, SUB_opc, AND_opc, OR_opc, XOR_opc, NOT_opc, SLL_opc, SRL_opc, FADD_opc, FMUL_opc, FDIV_opc, FSIN_opc, FCOS_opc, FATAN_opc, FSQRT_opc, FCMP_opc);

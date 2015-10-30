@@ -4,7 +4,7 @@
 --
 -- Create Date:   15:50:32 10/27/2015
 -- Design Name:   
--- Module Name:   /home/umedaikiti/Documents/cpuex2015/xilinx/cpu1/sramif_tb.vhd
+-- Module Name:   sramif_tb.vhd
 -- Project Name:  cpu1
 -- Target Device:  
 -- Tool versions:  
