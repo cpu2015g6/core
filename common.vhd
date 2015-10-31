@@ -264,13 +264,11 @@ package mem_pack is
 	type rs_type is record
 		op : op_type;
 		has_dummy : std_logic;
-		countdown : std_logic_vector(2 downto 0);
 		common : rs_common_type;
 	end record;
 	constant rs_zero : rs_type := (
 		NOP_op,
 		'0',
-		(others => '0'),
 		rs_common_zero
 	);
 	type rs_array_type is array (0 to 2**rs_num_width-1) of rs_type;

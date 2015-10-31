@@ -104,6 +104,7 @@ begin
 		-- execute
 		fadd_used := false;
 		fmul_used := false;
+		fsqrt_used := false;
 		fadd_op1_v := (others => '0');
 		fadd_op2_v := (others => '0');
 		fmul_op1_v := (others => '0');
