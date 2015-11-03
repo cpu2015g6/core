@@ -87,8 +87,8 @@ end component;
       full  : out std_logic;
       empty : out std_logic);
   end component;
-	signal data : std_logic_vector(7 downto 0);
-	signal wr_en : std_logic;
+	signal data : std_logic_vector(7 downto 0) := (others => '0');
+	signal wr_en : std_logic := '0';
 begin
 	f8 : fifo8
 	port map(

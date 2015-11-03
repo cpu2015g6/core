@@ -18,10 +18,10 @@ architecture beh of transmitter is
 	signal countdown : std_logic_vector(15 downto 0) := (others => '0');
 begin
 	tx <= buf(0);
-	process(clk) begin
+	process(clk, rst) begin
 		if rst = '1' then
 			state <= (others => '0');
-			buf <= (others => '0');
+			buf <= (0 => '1', others => '0');
 			countdown <= (others => '0');
 		elsif rising_edge(clk) then
 			if state = "0000" then
@@ -87,12 +87,12 @@ architecture beh of transif is
 			full : out std_logic := '0');
 	end component;
 	type state_type is (WaitState, ReadFifoState, TransmitState);
-	signal state : state_type;
+	signal state : state_type := WaitState;
 	signal rd_en : std_logic := '0';
-	signal empty : std_logic;
-	signal dout : std_logic_vector(7 downto 0);
-	signal go : std_logic;
-	signal t_full : std_logic;
+	signal empty : std_logic := '1';
+	signal dout : std_logic_vector(7 downto 0) := (others => '0');
+	signal go : std_logic := '0';
+	signal t_full : std_logic := '0';
 begin
 	f8 : fifo8
 	port map(

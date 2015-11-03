@@ -133,12 +133,6 @@ begin
 						end if;
 					when FDIV_op =>
 						report "not implemented" severity error;
-					when FSIN_op =>
-						report "not implemented" severity error;
-					when FCOS_op =>
-						report "not implemented" severity error;
-					when FATAN_op =>
-						report "not implemented" severity error;
 					when FSQRT_op =>
 						if not fsqrt_used then
 							fsqrt_op1_v := ra_data;

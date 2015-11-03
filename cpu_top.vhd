@@ -19,17 +19,19 @@ architecture beh of blockram is
 	type ram_type is array(0 to 2**awidth-1) of std_logic_vector(dwidth-1 downto 0);
 --	signal ram : ram_type := (others => (others => '0'));
 	signal ram : ram_type := (
-		0 => x"d0013f80",
-		1 => x"d0020010",
-		2 => x"e6010102",
-		3 => x"f9020101",
-		4 => x"f8020101",
-		5 => x"d002cafe",
-		6 => x"d8ff02ff",
-		7 => x"d902ffff",
-		8 => x"d302ffff",
-		9 => x"d201ffff",
-		10 => x"d301ffff",
+-- loopback
+--		0 => x"d2010000",
+--		1 => x"d3010000",
+--		2 => x"d4fffffe",
+		0 => x"d0010070",
+		1 => x"d002006f",
+		2 => x"d0030068",
+		3 => x"d0040065",
+		4 => x"d3010000",
+		5 => x"d3020000",
+		6 => x"d3030000",
+		7 => x"d3040000",
+		8 => x"d4ff0000",
 		others => (others => '0')
 	);
 	signal reg_addr : std_logic_vector(awidth-1 downto 0) := (others => '0');
@@ -292,18 +294,6 @@ architecture twoproc of cpu_top is
 			decode_result.rt := rt_rev1;
 			decode_result.ra := ra_rev1;
 			decode_result.rb := rb_rev1;
-		when x"FB" => --fsin
-			decode_result.opc := FSIN_opc;
-			decode_result.rt := rt_rev1;
-			decode_result.ra := ra_rev1;
-		when x"FC" => --fcos
-			decode_result.opc := FCOS_opc;
-			decode_result.rt := rt_rev1;
-			decode_result.ra := ra_rev1;
-		when x"FD" => --fatan
-			decode_result.opc := FATAN_opc;
-			decode_result.rt := rt_rev1;
-			decode_result.ra := ra_rev1;
 		when x"FE" => --fsqrt
 			decode_result.opc := FSQRT_opc;
 			decode_result.rt := rt_rev1;
@@ -529,18 +519,6 @@ begin
 		when FDIV_opc =>
 			unit := FPU_UNIT;
 			fpu_rs_v.op := fpu_pack.FDIV_op;
-			fpu_rs_v.common := rs_common_3;
-		when FSIN_opc =>
-			unit := FPU_UNIT;
-			fpu_rs_v.op := fpu_pack.FSIN_op;
-			fpu_rs_v.common := rs_common_3;
-		when FCOS_opc =>
-			unit := FPU_UNIT;
-			fpu_rs_v.op := fpu_pack.FCOS_op;
-			fpu_rs_v.common := rs_common_3;
-		when FATAN_opc =>
-			unit := FPU_UNIT;
-			fpu_rs_v.op := fpu_pack.FATAN_op;
 			fpu_rs_v.common := rs_common_3;
 		when FSQRT_opc =>
 			unit := FPU_UNIT;
