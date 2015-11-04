@@ -23,15 +23,21 @@ architecture beh of blockram is
 --		0 => x"d2010000",
 --		1 => x"d3010000",
 --		2 => x"d4fffffe",
-		0 => x"d0010070",
-		1 => x"d002006f",
-		2 => x"d0030068",
-		3 => x"d0040065",
+		0 => x"e3000000",
+		1 => x"e3000000",
+		2 => x"e3000000",
+		3 => x"d0010070",
 		4 => x"d3010000",
-		5 => x"d3020000",
-		6 => x"d3030000",
-		7 => x"d3040000",
-		8 => x"d4ff0000",
+		5 => x"d4ff0000",
+--		0 => x"d0010070",
+--		1 => x"d002006f",
+--		2 => x"d0030068",
+--		3 => x"d0040065",
+--		4 => x"d3010000",
+--		5 => x"d3020000",
+--		6 => x"d3030000",
+--		7 => x"d3040000",
+--		8 => x"d4ff0000",
 		others => (others => '0')
 	);
 	signal reg_addr : std_logic_vector(awidth-1 downto 0) := (others => '0');
@@ -744,7 +750,6 @@ begin
 		mem_in_v.recvifout := cpu_top_in.recvifout;
 		mem_in_v.transifout := cpu_top_in.transifout;
 		mem_in <= mem_in_v;
---		mem_in <= mem_pack.in_zero;
 		branch_in <= branch_in_v;
 		r_in <= v;
 	end process;

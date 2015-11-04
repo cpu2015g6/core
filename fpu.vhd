@@ -141,9 +141,21 @@ begin
 							v.rs(i).countdown := "000";
 						end if;
 					when FCMP_op =>
-						report "not implemented" severity error;
+						if ra_data(31) = '0' and rb_data(31) = '1' then
+							v.rs(i).common.result := gt_const;
+						elsif ra_data(31) = '1' and rb_data(31) = '0' then
+							v.rs(i).common.result := lt_const;
+						else
+							if ra_data = rb_data then
+								v.rs(i).common.result := eq_const;
+							elsif (ra_data(31) = '1') xor (unsigned(ra_data(30 downto 0)) < unsigned(rb_data(30 downto 0))) then
+								v.rs(i).common.result := lt_const;
+							else
+								v.rs(i).common.result := gt_const;
+							end if;
+						end if;
+						v.rs(i).common.state := RS_Done;
 					when NOP_op =>
-						report "not implemented" severity error;
 --					when others =>
 				end case;
 				v.rs(i).common.pc_next := std_logic_vector(unsigned(v.rs(i).common.pc) + 1);

@@ -62,6 +62,7 @@ begin
 		variable transifin_v : transif_in_type;
 		variable recvifin_v : recvif_in_type;
 		variable exec_i : integer;
+		variable debug : std_logic_vector(7 downto 0);
 	begin
 		v := r;
 		-- update rs
@@ -82,6 +83,7 @@ begin
 		transifin_v := transif_in_zero;
 		exec_i := to_integer(unsigned(r.rs_exec));
 		t := v.rs(exec_i).common;
+		debug := x"00";
 		if rs_common_ready(t) then
 			if v.rs(exec_i).has_dummy = '1' then
 				if mem_in.dummy_done = '1' then
@@ -139,11 +141,19 @@ begin
 		end if;
 		mem_out.sramifin <= sramifin_v;
 		mem_out.recvifin <= recvifin_v;
-		mem_out.transifin <= transifin_v;
+--		mem_out.transifin <= transifin_v;
 		-- store new rs contents
 		if r.rs_full = '0' and mem_in.rs_in.op /= NOP_op then
 			v.rs(to_integer(unsigned(r.rs_youngest))) := mem_in.rs_in;
 			v.rs_youngest := std_logic_vector(unsigned(r.rs_youngest) + 1);
+			debug := x"31";
+		else
+			debug := x"32";
+		end if;
+		if debug = x"00" then
+			mem_out.transifin <= ('0', debug);
+		else
+			mem_out.transifin <= ('1', debug);
 		end if;
 		if mem_in.cdb_next = '1' or r.cdb_out.tag.valid = '0' then
 			-- clear rs

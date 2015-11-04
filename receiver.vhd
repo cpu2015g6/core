@@ -110,9 +110,4 @@ begin
 		data => data,
 		de => wr_en
 	);
-	process(clk)
-	begin
-		if rising_edge(clk) then
-		end if;
-	end process;
 end;

@@ -25,7 +25,7 @@ architecture beh of sram_sim is
 	type ram_t is array(0 to 1048575) of std_logic_vector(31 downto 0);
 	signal ram : ram_t := (others => (others => '0'));
 	signal za_obuf : std_logic_vector(19 downto 0) := (others => '0');
-	signal xwa_obuf : std_logic := '0';
+	signal xwa_obuf : std_logic := '1';
 begin
 	ZD <= (others => 'Z') when hist(1).xwa = '0' else ram(to_integer(unsigned(hist(1).za)));
 	process(clk)
