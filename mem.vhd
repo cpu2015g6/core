@@ -7,7 +7,16 @@ use work.common.all;
 entity mem is
 	port(
 		clk, rst : in std_logic;
-		mem_in : in in_type;
+		rs_in_op : in op_type;
+		rs_in_has_dummy : in std_logic;
+		rs_in_common : in rs_common_type;
+		cdb_in : in cdb_type;
+		cdb_next : in std_logic;-- set cdb_next = 1 when cdb_out is broadcasted
+		sync_rst : in std_logic;-- synchronous reset
+		dummy_done : in std_logic;
+		sramifout : in sramif_out;
+		recvifout : in recvif_out_type;
+		transifout : in transif_out_type;
 		mem_out : out out_type);
 end mem;
 
@@ -43,7 +52,20 @@ architecture twoproc of mem is
 		new_rs.common.pc_next := std_logic_vector(unsigned(rs.common.pc) + 1);
 		return new_rs;
 	end rs_executing_update;
+	signal mem_in : in_type;
 begin
+	mem_in.rs_in <= (
+		op => rs_in_op,
+		has_dummy => rs_in_has_dummy,
+		common => rs_in_common
+	);
+	mem_in.cdb_in <= cdb_in;
+	mem_in.cdb_next <= cdb_next;
+	mem_in.rst <= sync_rst;
+	mem_in.dummy_done <= dummy_done;
+	mem_in.sramifout <= sramifout;
+	mem_in.recvifout <= recvifout;
+	mem_in.transifout <= transifout;
 	mem_out.cdb_out <= r.cdb_out;
 	mem_out.rs_full <= r.rs_full;
 	process(clk, rst)

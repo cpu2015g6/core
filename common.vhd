@@ -260,7 +260,13 @@ library ieee;
 use ieee.std_logic_1164.all;
 use work.common.all;
 package mem_pack is
-	type op_type is (IN_op, OUT_op, LOAD_op, STORE_op, NOP_op);
+--	type op_type is (IN_op, OUT_op, LOAD_op, STORE_op, NOP_op);
+	subtype op_type is std_logic_vector(2 downto 0);
+	constant LOAD_op : op_type := "001";
+	constant STORE_op : op_type := "010";
+	constant IN_op : op_type := "011";
+	constant OUT_op : op_type := "100";
+	constant NOP_op : op_type := "000";
 	type rs_type is record
 		op : op_type;
 		has_dummy : std_logic;

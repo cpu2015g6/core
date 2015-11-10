@@ -23,6 +23,7 @@ architecture beh of blockram is
 --		0 => x"d2010000",
 --		1 => x"d3010000",
 --		2 => x"d4fffffe",
+-- infinite pohe
 		0 => x"d0010070",
 		1 => x"d002006f",
 		2 => x"d0030068",
@@ -31,7 +32,7 @@ architecture beh of blockram is
 		5 => x"d3020000",
 		6 => x"d3030000",
 		7 => x"d3040000",
-		8 => x"d4ff0000",
+		8 => x"d4fffff8",
 		others => (others => '0')
 	);
 	signal reg_addr : std_logic_vector(awidth-1 downto 0) := (others => '0');
@@ -105,6 +106,7 @@ architecture twoproc of cpu_top is
 		pc : pc_type;
 		rob : rob_ring_buffer_type;
 		state : CPU_state_type;
+		inst_valid : std_logic;
 	end record;
 	constant reg_zero : reg_type := (
 		decode_result_zero,
@@ -112,7 +114,8 @@ architecture twoproc of cpu_top is
 		register_array_zero,
 		(others => '0'),
 		rob_ring_buffer_zero,
-		CPU_NORMAL
+		CPU_NORMAL,
+		'0'
 	);
 	signal r, r_in : reg_type := reg_zero;
 	component alu is
@@ -134,7 +137,16 @@ architecture twoproc of cpu_top is
 	component mem is
 		port(
 			clk, rst : in std_logic;
-			mem_in : in mem_pack.in_type;
+		rs_in_op : in mem_pack.op_type;
+		rs_in_has_dummy : in std_logic;
+		rs_in_common : in rs_common_type;
+		cdb_in : in cdb_type;
+		cdb_next : in std_logic;-- set cdb_next = 1 when cdb_out is broadcasted
+		sync_rst : in std_logic;-- synchronous reset
+		dummy_done : in std_logic;
+		sramifout : in sramif_out;
+		recvifout : in recvif_out_type;
+		transifout : in transif_out_type;
 			mem_out : out mem_pack.out_type);
 	end component;
 	component branch is
@@ -384,7 +396,20 @@ begin
 	fpu_l : fpu
 	port map(clk => clk, rst => rst, fpu_in => fpu_in, fpu_out => fpu_out);
 	mem_l : mem
-	port map(clk => clk, rst => rst, mem_in => mem_in, mem_out => mem_out);
+	port map(
+		clk => clk,
+		rst => rst,
+		rs_in_op => mem_in.rs_in.op,
+		rs_in_has_dummy => mem_in.rs_in.has_dummy,
+		rs_in_common => mem_in.rs_in.common,
+		cdb_in => mem_in.cdb_in,
+		cdb_next => mem_in.cdb_next,
+		sync_rst => mem_in.rst,
+		dummy_done => mem_in.dummy_done,
+		sramifout => mem_in.sramifout,
+		recvifout => mem_in.recvifout,
+		transifout => mem_in.transifout,
+		mem_out => mem_out);
 	branch_l : branch
 	port map(clk => clk, rst => rst, branch_in => branch_in, branch_out => branch_out);
 	process(clk, rst)
@@ -421,6 +446,10 @@ begin
 		fpu_in_v := fpu_pack.in_zero;
 		mem_in_v := mem_pack.in_zero;
 		branch_in_v := branch_pack.in_zero;
+		if r.inst_valid = '0' then
+			v.pc := r.pc;
+			v.inst_valid := '1';
+		else
 		-- update ROB
 		v.rob.rob_array := update_ROB(r.rob.rob_array, r.cdb);
 		-- decode instruction
@@ -730,13 +759,15 @@ begin
 				registers => v.registers,
 				pc => oldest_rob.pc_next,
 				rob => rob_ring_buffer_zero,
-				state => CPU_NORMAL
+				state => CPU_NORMAL,
+				inst_valid => '0'
 			);
 			-- reset other modules
 			alu_in_v.rst := '1';
 			fpu_in_v.rst := '1';
 			mem_in_v.rst := '1';
 			branch_in_v.rst := '1';
+		end if;
 		end if;
 		alu_in <= alu_in_v;
 		fpu_in <= fpu_in_v;

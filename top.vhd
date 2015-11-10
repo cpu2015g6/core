@@ -96,6 +96,7 @@ begin
 	);
 	trans : transif
 	generic map(w => x"1ADB")
+--	generic map(w => x"0010")
 	port map(
 		tx => RS_TX,
 		clk => MCLK1,
@@ -106,6 +107,7 @@ begin
 	);
 	recv : recvif
 	generic map(w => x"1ADB")
+--	generic map(w => x"0010")
 	port map(
 		rd_en => cpu_top_out.recvifin.rd_en,
 		dout => cpu_top_in.recvifout.dout,
