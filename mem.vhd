@@ -28,13 +28,15 @@ architecture twoproc of mem is
 		rs_youngest, rs_oldest, rs_exec : rs_num_type;
 		rs_full : std_logic;
 		cdb_out : cdb_type;
+		dummy_done : std_logic;
 	end record;
 	constant reg_zero : reg_type := (
 		(others => rs_zero),
 		(others => (others => '0')),
 		(others => '0'), (others => '0'), (others => '0'),
 		'0',
-		cdb_zero
+		cdb_zero,
+		'0'
 	);
 	signal r, r_in : reg_type := reg_zero;
 	function rs_executing_update(rs : rs_type;load_in : std_logic_vector(31 downto 0);serial_in : std_logic_vector(7 downto 0)) return rs_type is
@@ -84,9 +86,11 @@ begin
 		variable transifin_v : transif_in_type;
 		variable recvifin_v : recvif_in_type;
 		variable exec_i : integer;
-		variable debug : std_logic_vector(7 downto 0);
 	begin
 		v := r;
+		if mem_in.dummy_done = '1' then
+			v.dummy_done := '1';
+		end if;
 		-- update rs
 		for i in r.rs'range loop
 			v.rs(i).common.ra := register_update(r.rs(i).common.ra, mem_in.cdb_in);
@@ -105,17 +109,11 @@ begin
 		transifin_v := transif_in_zero;
 		exec_i := to_integer(unsigned(r.rs_exec));
 		t := v.rs(exec_i).common;
-		debug := x"00";
 		if rs_common_ready(t) then
-			if v.rs(exec_i).has_dummy = '1' then
-				if mem_in.dummy_done = '1' then
-					exec_complete := true;
-					v.rs(exec_i).has_dummy := '0'; -- this is effective when dummy_done = '1' and the execution cannot be done immidiately because the resources are busy
-				else
-					exec_complete := false;
-				end if;
-			else
+			if v.rs(exec_i).has_dummy = '0' or v.dummy_done = '1' then
 				exec_complete := true;
+			else
+				exec_complete := false;
 			end if;
 			if exec_complete then
 				case v.rs(exec_i).op is
@@ -159,23 +157,16 @@ begin
 			end if;
 			if exec_complete then
 				v.rs_exec := std_logic_vector(unsigned(r.rs_exec) + 1);
+				v.dummy_done := '0';
 			end if;
 		end if;
 		mem_out.sramifin <= sramifin_v;
 		mem_out.recvifin <= recvifin_v;
---		mem_out.transifin <= transifin_v;
+		mem_out.transifin <= transifin_v;
 		-- store new rs contents
 		if r.rs_full = '0' and mem_in.rs_in.op /= NOP_op then
 			v.rs(to_integer(unsigned(r.rs_youngest))) := mem_in.rs_in;
 			v.rs_youngest := std_logic_vector(unsigned(r.rs_youngest) + 1);
-			debug := x"31";
-		else
-			debug := x"32";
-		end if;
-		if debug = x"00" then
-			mem_out.transifin <= ('0', debug);
-		else
-			mem_out.transifin <= ('1', debug);
 		end if;
 		if mem_in.cdb_next = '1' or r.cdb_out.tag.valid = '0' then
 			-- clear rs
