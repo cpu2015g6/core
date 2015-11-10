@@ -775,7 +775,6 @@ begin
 		mem_in_v.recvifout := cpu_top_in.recvifout;
 		mem_in_v.transifout := cpu_top_in.transifout;
 		mem_in <= mem_in_v;
---		mem_in <= mem_pack.in_zero;
 		branch_in <= branch_in_v;
 		r_in <= v;
 	end process;

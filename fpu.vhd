@@ -143,27 +143,20 @@ begin
 					when FCMP_op =>
 						if ra_data(30 downto 0) = (30 downto 0 => '0') and rb_data(30 downto 0) = (30 downto 0 => '0') then
 							v.rs(i).common.result := eq_const;
-						elsif ra_data(31) = '1' and rb_data(31) = '0' then
-							v.rs(i).common.result := lt_const;
 						elsif ra_data(31) = '0' and rb_data(31) = '1' then
 							v.rs(i).common.result := gt_const;
-						elsif ra_data(31) = '1' then
-							if ra_data(30 downto 0) = rb_data(30 downto 0) then
-								v.rs(i).common.result := eq_const;
-							elsif unsigned(ra_data(30 downto 0)) < unsigned(rb_data(30 downto 0)) then
-								v.rs(i).common.result := gt_const;
-							else
-								v.rs(i).common.result := lt_const;
-							end if;
+						elsif ra_data(31) = '1' and rb_data(31) = '0' then
+							v.rs(i).common.result := lt_const;
 						else
-							if ra_data(30 downto 0) = rb_data(30 downto 0) then
+							if ra_data = rb_data then
 								v.rs(i).common.result := eq_const;
-							elsif unsigned(ra_data(30 downto 0)) < unsigned(rb_data(30 downto 0)) then
+							elsif (ra_data(31) = '1') xor (unsigned(ra_data(30 downto 0)) < unsigned(rb_data(30 downto 0))) then
 								v.rs(i).common.result := lt_const;
 							else
 								v.rs(i).common.result := gt_const;
 							end if;
 						end if;
+						v.rs(i).common.state := RS_Done;
 					when NOP_op =>
 --					when others =>
 				end case;
