@@ -119,7 +119,7 @@ begin
 				case v.rs(exec_i).op is
 				when LOAD_op =>
 					v.rs(exec_i).common.state := RS_Executing;
-					v.countdown(exec_i) := "010";
+					v.countdown(exec_i) := "011";
 					sramifin_v := (
 						op => SRAM_LOAD,
 						addr => t.ra.data(19 downto 0),

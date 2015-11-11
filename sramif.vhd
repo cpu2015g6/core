@@ -44,6 +44,7 @@ architecture beh of sramif is
 	signal r, r_in : reg_type := rzero;
 	signal zd_obuf : std_logic_vector(31 downto 0) := (others => '0');
 	signal zd0 : std_logic_vector(31 downto 0) := (others => '0');
+	signal sramifout0 : sramif_out := sramif_out_zero;
 begin
 	XE1 <= '0';
 	E2A <= '1';
@@ -58,8 +59,8 @@ begin
 	XZBE <= "0000";
 	ZCLKMA <= (1 downto 0 => clk);
 	ZA <= sramifin.addr;
-	sramifout.data_enable <= r.out_enable;
-	sramifout.rd <= ZD when r.out_enable = '1' else (others => '0');
+	sramifout0.data_enable <= r.out_enable;
+	sramifout0.rd <= ZD when r.out_enable = '1' else (others => '0');
 	zd0 <= r.store_data when r.store = '1' else (others => 'Z');
 	ZD <= zd_obuf when sim else zd0;
 	XWA <= '0' when sramifin.op = SRAM_STORE else '1';
@@ -98,6 +99,7 @@ begin
 			if sim then
 				zd_obuf <= zd0;
 			end if;
+			sramifout <= sramifout0;
 			r <= r_in;
 		end if;
 	end process;
