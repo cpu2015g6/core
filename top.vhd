@@ -3,6 +3,10 @@ use ieee.std_logic_1164.all;
 use work.common.all;
 
 entity top is
+	generic(
+		sim : boolean := false;
+		w : std_logic_vector(15 downto 0) := x"1ADB"
+	);
 	port(
 		MCLK1 : in std_logic;
 		RS_TX : out std_logic;
@@ -73,7 +77,7 @@ begin
 		cpu_top_out => cpu_top_out
 	);
 	sramif_l : sramif
---	generic map(sim => true)
+	generic map(sim => sim)
 	port map(
 		clk => MCLK1,
 		rst => rst,
@@ -95,8 +99,7 @@ begin
 		sramifout => cpu_top_in.sramifout
 	);
 	trans : transif
-	generic map(w => x"1ADB")
---	generic map(w => x"0010")
+	generic map(w => w)
 	port map(
 		tx => RS_TX,
 		clk => MCLK1,
@@ -106,8 +109,7 @@ begin
 		full => cpu_top_in.transifout.full
 	);
 	recv : recvif
-	generic map(w => x"1ADB")
---	generic map(w => x"0010")
+	generic map(w => w)
 	port map(
 		rd_en => cpu_top_out.recvifin.rd_en,
 		dout => cpu_top_in.recvifout.dout,
