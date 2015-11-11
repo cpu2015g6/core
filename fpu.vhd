@@ -36,6 +36,14 @@ architecture twoproc of fpu is
 	end component;
 	signal fsqrt_op1 : std_logic_vector(31 downto 0) := (others => '0');
 	signal fsqrt_ans : std_logic_vector(31 downto 0);
+	component finv is
+	  port(clk:  in std_logic;
+	       op:  in std_logic_vector(31 downto 0);
+	       ans:  out std_logic_vector(31 downto 0) := x"00000000"
+	       );
+	end component;
+	signal finv_op1 : std_logic_vector(31 downto 0) := (others => '0');
+	signal finv_ans : std_logic_vector(31 downto 0);
 	type reg_type is record
 		rs : rs_array_type;
 		rs_full : std_logic;
@@ -76,6 +84,12 @@ begin
 		op => fsqrt_op1,
 		ans => fsqrt_ans
 	);
+	finv_l : finv
+	port map(
+		clk => clk,
+		op => finv_op1,
+		ans => finv_ans
+	);
 	process(clk, rst)
 	begin
 		if rst = '1' then
@@ -84,7 +98,7 @@ begin
 			r <= r_in;
 		end if;
 	end process;
-	process(fpu_in, r, fadd_ans, fmul_ans, fsqrt_ans)
+	process(fpu_in, r, fadd_ans, fmul_ans, fsqrt_ans, finv_ans)
 		variable v : reg_type;
 		variable ra_data : std_logic_vector(31 downto 0);
 		variable rb_data : std_logic_vector(31 downto 0);
@@ -94,6 +108,8 @@ begin
 		variable fmul_op1_v, fmul_op2_v : std_logic_vector(31 downto 0);
 		variable fsqrt_used : boolean;
 		variable fsqrt_op1_v : std_logic_vector(31 downto 0);
+		variable finv_used : boolean;
+		variable finv_op1_v : std_logic_vector(31 downto 0);
 	begin
 		v := r;
 		-- update rs
@@ -105,16 +121,18 @@ begin
 		fadd_used := false;
 		fmul_used := false;
 		fsqrt_used := false;
+		finv_used := false;
 		fadd_op1_v := (others => '0');
 		fadd_op2_v := (others => '0');
 		fmul_op1_v := (others => '0');
 		fmul_op2_v := (others => '0');
 		fsqrt_op1_v := (others => '0');
-		for i in v.rs'range loop
-			if rs_common_ready(v.rs(i).common) then
-				ra_data := v.rs(i).common.ra.data;
-				rb_data := v.rs(i).common.rb.data;
-				case v.rs(i).op is
+		finv_op1_v := (others => '0');
+		for i in r.rs'range loop
+			if rs_common_ready(r.rs(i).common) then
+				ra_data := r.rs(i).common.ra.data;
+				rb_data := r.rs(i).common.rb.data;
+				case r.rs(i).op is
 					when FADD_op =>
 						if not fadd_used then
 							fadd_op1_v := ra_data;
@@ -131,14 +149,19 @@ begin
 							v.rs(i).common.state := RS_Executing;
 							v.rs(i).countdown := "000";
 						end if;
-					when FDIV_op =>
-						report "not implemented" severity error;
+					when FINV_op =>
+						if not finv_used then
+							finv_op1_v := ra_data;
+							finv_used := true;
+							v.rs(i).common.state := RS_Executing;
+							v.rs(i).countdown := "001";
+						end if;
 					when FSQRT_op =>
 						if not fsqrt_used then
 							fsqrt_op1_v := ra_data;
 							fsqrt_used := true;
 							v.rs(i).common.state := RS_Executing;
-							v.rs(i).countdown := "000";
+							v.rs(i).countdown := "001";
 						end if;
 					when FCMP_op =>
 						if ra_data(30 downto 0) = (30 downto 0 => '0') and rb_data(30 downto 0) = (30 downto 0 => '0') then
@@ -160,15 +183,18 @@ begin
 					when NOP_op =>
 --					when others =>
 				end case;
-				v.rs(i).common.pc_next := std_logic_vector(unsigned(v.rs(i).common.pc) + 1);
-			elsif v.rs(i).common.state = RS_Executing then
-				if v.rs(i).countdown = "000" then
-				case v.rs(i).op is
+				v.rs(i).common.pc_next := std_logic_vector(unsigned(r.rs(i).common.pc) + 1);
+			elsif r.rs(i).common.state = RS_Executing then
+				if r.rs(i).countdown = "000" then
+				case r.rs(i).op is
 					when FADD_op =>
 						v.rs(i).common.result := fadd_ans;
 						v.rs(i).common.state := RS_Done;
 					when FMUL_op =>
 						v.rs(i).common.result := fmul_ans;
+						v.rs(i).common.state := RS_Done;
+					when FINV_op =>
+						v.rs(i).common.result := finv_ans;
 						v.rs(i).common.state := RS_Done;
 					when FSQRT_op =>
 						v.rs(i).common.result := fsqrt_ans;
@@ -176,7 +202,7 @@ begin
 					when others =>
 				end case;
 				else
-					v.rs(i).countdown := std_logic_vector(unsigned(v.rs(i).countdown) - 1);
+					v.rs(i).countdown := std_logic_vector(unsigned(r.rs(i).countdown) - 1);
 				end if;
 			end if;
 		end loop;
@@ -185,6 +211,7 @@ begin
 		fmul_op1 <= fmul_op1_v;
 		fmul_op2 <= fmul_op2_v;
 		fsqrt_op1 <= fsqrt_op1_v;
+		finv_op1 <= finv_op1_v;
 		-- store new rs contents
 		if r.rs_full = '0' and fpu_in.rs_in.op /= NOP_op then
 			v.rs(to_integer(unsigned(r.free_rs_num))) := fpu_in.rs_in;

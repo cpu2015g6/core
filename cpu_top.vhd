@@ -69,14 +69,20 @@ architecture beh of blockram is
 --32 => x"d0080001",
 --33 => x"d5ff02ff",
 -- mem
-0 => x"d0020000",
-1 => x"d80202ff",
-2 => x"d90102ff",
-3 => x"d3010000",
-4 => x"d0010001",
-5 => x"e0020201",
-6 => x"d4fffffb",
-
+--0 => x"d0020000",
+--1 => x"d80202ff",
+--2 => x"d90102ff",
+--3 => x"d3010000",
+--4 => x"d0010001",
+--5 => x"e0020201",
+--6 => x"d4fffffb",
+0 => x"d0013f80",
+1 => x"d0020010",
+2 => x"e6010102",
+3 => x"f8020101",
+4 => x"f9020101",
+5 => x"fa020101",
+6 => x"fe0201ff",
 		others => (others => '0')
 	);
 	signal reg_addr : std_logic_vector(awidth-1 downto 0) := (others => '0');
@@ -361,8 +367,8 @@ architecture twoproc of cpu_top is
 			decode_result.rt := rt_rev1;
 			decode_result.ra := ra_rev1;
 			decode_result.rb := rb_rev1;
-		when x"FA" => --fdiv
-			decode_result.opc := FDIV_opc;
+		when x"FA" => --finv
+			decode_result.opc := FINV_opc;
 			decode_result.rt := rt_rev1;
 			decode_result.ra := ra_rev1;
 			decode_result.rb := rb_rev1;
@@ -624,9 +630,9 @@ begin
 				unit := FPU_UNIT;
 				fpu_rs_v.op := fpu_pack.FMUL_op;
 				fpu_rs_v.common := rs_common_3;
-			when FDIV_opc =>
+			when FINV_opc =>
 				unit := FPU_UNIT;
-				fpu_rs_v.op := fpu_pack.FDIV_op;
+				fpu_rs_v.op := fpu_pack.FINV_op;
 				fpu_rs_v.common := rs_common_3;
 			when FSQRT_opc =>
 				unit := FPU_UNIT;

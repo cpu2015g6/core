@@ -10,7 +10,7 @@ package common is
 	constant reg_num_width : integer := 5;
 	subtype reg_num_type is std_logic_vector(reg_num_width-1 downto 0);
 	constant reg_num_zero : reg_num_type := (others => '1');
-	type opc_type is (NOP_opc, LIMM_opc, CMP_opc, IN_opc, OUT_opc, J_opc, JR_opc, JREQ_opc, JRNEQ_opc, JRGT_opc, JRGTE_opc, JRLT_opc, JRLTE_opc, STW_opc, LDW_opc, ADD_opc, SUB_opc, AND_opc, OR_opc, XOR_opc, NOT_opc, SLL_opc, SRL_opc, FADD_opc, FMUL_opc, FDIV_opc, FSQRT_opc, FCMP_opc);
+	type opc_type is (NOP_opc, LIMM_opc, CMP_opc, IN_opc, OUT_opc, J_opc, JR_opc, JREQ_opc, JRNEQ_opc, JRGT_opc, JRGTE_opc, JRLT_opc, JRLTE_opc, STW_opc, LDW_opc, ADD_opc, SUB_opc, AND_opc, OR_opc, XOR_opc, NOT_opc, SLL_opc, SRL_opc, FADD_opc, FMUL_opc, FINV_opc, FSQRT_opc, FCMP_opc);
 	type unit_type is (ALU_UNIT, FPU_UNIT, MEM_UNIT, BRANCH_UNIT, NULL_UNIT);
 	constant gt_const : std_logic_vector(31 downto 0) := x"00000002";
 	constant eq_const : std_logic_vector(31 downto 0) := x"00000001";
@@ -222,7 +222,7 @@ library ieee;
 use ieee.std_logic_1164.all;
 use work.common.all;
 package fpu_pack is
-	type op_type is (FADD_op, FMUL_op, FDIV_op, FSQRT_op, FCMP_op, NOP_op);
+	type op_type is (FADD_op, FMUL_op, FINV_op, FSQRT_op, FCMP_op, NOP_op);
 	type rs_type is record
 		op : op_type;
 		countdown : std_logic_vector(2 downto 0);
