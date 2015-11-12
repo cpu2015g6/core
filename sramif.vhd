@@ -33,18 +33,21 @@ architecture beh of sramif is
 		nop : std_logic;
 		store_data : std_logic_vector(31 downto 0);
 		hist : cmd_hist;
+		sramifin : sramif_in;
+		sramifout : sramif_out;
 	end record;
 	constant rzero : reg_type := (
 		'0', '0',
 		'0',
 		'0',
 		(others => '0'),
-		(others => cmd_zero)
+		(others => cmd_zero),
+		sramif_in_zero,
+		sramif_out_zero
 	);
 	signal r, r_in : reg_type := rzero;
 	signal zd_obuf : std_logic_vector(31 downto 0) := (others => '0');
 	signal zd0 : std_logic_vector(31 downto 0) := (others => '0');
-	signal sramifout0 : sramif_out := sramif_out_zero;
 begin
 	XE1 <= '0';
 	E2A <= '1';
@@ -58,20 +61,26 @@ begin
 	XFT <= '1';
 	XZBE <= "0000";
 	ZCLKMA <= (1 downto 0 => clk);
-	ZA <= sramifin.addr;
-	sramifout0.data_enable <= r.out_enable;
-	sramifout0.rd <= ZD when r.out_enable = '1' else (others => '0');
+	ZA <= r.sramifin.addr;
+	sramifout <= r.sramifout;
 	zd0 <= r.store_data when r.store = '1' else (others => 'Z');
 	ZD <= zd_obuf when sim else zd0;
-	XWA <= '0' when sramifin.op = SRAM_STORE else '1';
-	process(r, sramifin)
+	XWA <= '0' when r.sramifin.op = SRAM_STORE else '1';
+	process(r, sramifin, ZD)
 		variable v : reg_type;
 		variable nextcmd : cmd_type;
 	begin
 		v := r;
+		v.sramifin := sramifin;
 		v.hist(1 to 3) := r.hist(0 to 2);
-		v.hist(0).op := sramifin.op;
-		v.hist(0).data := sramifin.wd;
+		v.hist(0).op := r.sramifin.op;
+		v.hist(0).data := r.sramifin.wd;
+		v.sramifout.data_enable := r.out_enable;
+		if r.out_enable = '1' then
+			v.sramifout.rd := ZD;
+		else
+			v.sramifout.rd := (others => '0');
+		end if;
 		nextcmd := r.hist(0);
 		case nextcmd.op is
 			when SRAM_NOP =>
@@ -99,7 +108,6 @@ begin
 			if sim then
 				zd_obuf <= zd0;
 			end if;
-			sramifout <= sramifout0;
 			r <= r_in;
 		end if;
 	end process;
