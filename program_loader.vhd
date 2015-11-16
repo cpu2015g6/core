@@ -36,6 +36,7 @@ architecture twoproc of program_loader is
 		(others => '0')
 	);
 	signal r, r_in : reg_type := rzero;
+	constant sram_head_addr : std_logic_vector(19 downto 0) := x"FFF00";
 begin
 	active <= '0' when r.state = IDLE else '1';
 	process(clk, rst)
@@ -101,7 +102,7 @@ begin
 			if r.rd_en = '1' and r.read_count = "11" then
 				sramifin_v := (
 					op => SRAM_STORE,
-					addr => r.addr(19 downto 0),
+					addr => std_logic_vector(unsigned(sram_head_addr) + unsigned(r.addr(19 downto 0))),
 					wd => v.buf
 				);
 			end if;

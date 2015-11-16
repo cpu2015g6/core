@@ -147,7 +147,7 @@ begin
 							fmul_op2_v := rb_data;
 							fmul_used := true;
 							v.rs(i).common.state := RS_Executing;
-							v.rs(i).countdown := "000";
+							v.rs(i).countdown := "001";
 						end if;
 					when FINV_op =>
 						if not finv_used then

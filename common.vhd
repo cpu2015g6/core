@@ -3,7 +3,7 @@ use ieee.std_logic_1164.all;
 package common is
 	constant rs_num_width : integer := 2;
 	subtype rs_num_type is std_logic_vector(rs_num_width-1 downto 0);
-	constant pc_width : integer := 14;
+	constant pc_width : integer := 15;
 	subtype pc_type is std_logic_vector(pc_width-1 downto 0);
 	constant rob_num_width : integer := 4;
 	subtype rob_num_type is std_logic_vector(rob_num_width-1 downto 0);

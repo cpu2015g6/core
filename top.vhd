@@ -4,7 +4,10 @@ use work.common.all;
 
 entity top is
 	generic(
-		w : std_logic_vector(15 downto 0) := x"1ADB"
+-- 9600
+--		w : std_logic_vector(15 downto 0) := x"1ADB"
+-- 115200
+		w : std_logic_vector(15 downto 0) := x"023F"
 	);
 	port(
 		MCLK1 : in std_logic;
@@ -62,21 +65,37 @@ architecture twoproc of top is
 	      empty : out std_logic
 		);
 	end component;
+	component overclock is
+	   port ( CLKIN_IN        : in    std_logic; 
+	          RST_IN          : in    std_logic; 
+	          CLKFX_OUT       : out   std_logic; 
+	          CLKIN_IBUFG_OUT : out   std_logic; 
+	          CLK0_OUT        : out   std_logic);
+	end component;
 	signal cpu_top_in : cpu_top_in_type;
 	signal cpu_top_out : cpu_top_out_type;
-	signal rst : std_logic := '0';
+	signal clk, rst : std_logic := '0';
 begin
 	rst <= not XRST;
+--	overclock_l : overclock
+--	port map (
+--		CLKIN_IN => MCLK1, 
+--		RST_IN => rst,
+--		CLKFX_OUT => clk,
+--		CLKIN_IBUFG_OUT => open,
+--		CLK0_OUT => open
+--	);
+	clk <= MCLK1;
 	cpu_l : cpu_top
 	port map(
-		clk => MCLK1,
+		clk => clk,
 		rst => rst,
 		cpu_top_in => cpu_top_in,
 		cpu_top_out => cpu_top_out
 	);
 	sramif_l : sramif
 	port map(
-		clk => MCLK1,
+		clk => clk,
 		rst => rst,
 		ZD => ZD,
 		ZA => ZA,
@@ -99,7 +118,7 @@ begin
 	generic map(w => w)
 	port map(
 		tx => RS_TX,
-		clk => MCLK1,
+		clk => clk,
 		rst => rst,
 		wr_en => cpu_top_out.transifin.wr_en,
 		din => cpu_top_out.transifin.din,
@@ -112,7 +131,7 @@ begin
 		dout => cpu_top_in.recvifout.dout,
 		full => cpu_top_in.recvifout.full,
 		empty => cpu_top_in.recvifout.empty,
-		clk => MCLK1,
+		clk => clk,
 		rst => rst,
 		rx => RS_RX
 	);
