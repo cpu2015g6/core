@@ -108,18 +108,18 @@ begin
 		recvifin_v := recvif_in_zero;
 		transifin_v := transif_in_zero;
 		exec_i := to_integer(unsigned(r.rs_exec));
-		t := v.rs(exec_i).common;
+		t := r.rs(exec_i).common;
 		if rs_common_ready(t) then
-			if v.rs(exec_i).has_dummy = '0' or v.dummy_done = '1' then
+			if r.rs(exec_i).has_dummy = '0' or r.dummy_done = '1' then
 				exec_complete := true;
 			else
 				exec_complete := false;
 			end if;
 			if exec_complete then
-				case v.rs(exec_i).op is
+				case r.rs(exec_i).op is
 				when LOAD_op =>
 					v.rs(exec_i).common.state := RS_Executing;
-					v.countdown(exec_i) := "100";
+					v.countdown(exec_i) := "011";
 					sramifin_v := (
 						op => SRAM_LOAD,
 						addr => t.ra.data(19 downto 0),

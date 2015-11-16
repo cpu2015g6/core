@@ -4,7 +4,6 @@ use work.common.all;
 
 entity top is
 	generic(
-		sim : boolean := false;
 		w : std_logic_vector(15 downto 0) := x"1ADB"
 	);
 	port(
@@ -30,7 +29,6 @@ architecture twoproc of top is
 		);
 	end component;
 	component sramif is
-		generic(sim : boolean := false);
 		port(
 			clk, rst : in std_logic;
 			ZD : inout std_logic_vector(31 downto 0);
@@ -77,7 +75,6 @@ begin
 		cpu_top_out => cpu_top_out
 	);
 	sramif_l : sramif
-	generic map(sim => sim)
 	port map(
 		clk => MCLK1,
 		rst => rst,
