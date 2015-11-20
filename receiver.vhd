@@ -15,6 +15,7 @@ architecture beh of receiver is
 	signal buf : std_logic_vector(8 downto 0) := (others => '0');
 	signal state : std_logic_vector(3 downto 0) := (others => '0');
 	signal countdown : std_logic_vector(15 downto 0) := (others => '0');
+	signal rx0 : std_logic := '1';
 begin
 	data <= buf(7 downto 0);
 	process(clk, rst)
@@ -25,16 +26,17 @@ begin
 			state <= "0000";
 			countdown <= (others => '0');
 		elsif rising_edge(clk) then
+			rx0 <= rx;
 			if state = "0000" then
 				de <= '0';
-				if rx = '0' then
+				if rx0 = '0' then
 					state <= "0001";
 					countdown <= '0' & w(15 downto 1);
 				end if;
 			else
 				if countdown = x"0000" then
 					countdown <= w;
-					buf <= rx & buf(8 downto 1);
+					buf <= rx0 & buf(8 downto 1);
 					if state = "1010" then
 						state <= "0000";
 						de <= '1';

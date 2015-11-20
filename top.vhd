@@ -7,7 +7,7 @@ entity top is
 -- 9600
 --		w : std_logic_vector(15 downto 0) := x"1ADB"
 -- 115200
-		w : std_logic_vector(15 downto 0) := x"023F"
+		w : std_logic_vector(15 downto 0) := x"0240"
 	);
 	port(
 		MCLK1 : in std_logic;

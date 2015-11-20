@@ -36,7 +36,7 @@ architecture twoproc of program_loader is
 		(others => '0')
 	);
 	signal r, r_in : reg_type := rzero;
-	constant sram_head_addr : std_logic_vector(19 downto 0) := x"FFF00";
+	constant sram_head_addr : std_logic_vector(19 downto 0) := x"00000";
 begin
 	active <= '0' when r.state = IDLE else '1';
 	process(clk, rst)
@@ -91,7 +91,7 @@ begin
 			if r.rd_en = '1' and r.read_count = "11" then
 				bram_we_v := '1';
 				bram_addr_v := r.addr(pc_width-1 downto 0);
-				v.addr(pc_width-1 downto 0) := std_logic_vector(unsigned(r.addr(pc_width-1 downto 0)) + 1);
+				v.addr := std_logic_vector(unsigned(r.addr) + 1);
 				bram_din_v := v.buf;
 			end if;
 			if r.bram_size = v.addr then
@@ -105,6 +105,7 @@ begin
 					addr => std_logic_vector(unsigned(sram_head_addr) + unsigned(r.addr(19 downto 0))),
 					wd => v.buf
 				);
+				v.addr := std_logic_vector(unsigned(r.addr) + 1);
 			end if;
 			if r.sram_size = v.addr then
 				v.state := IDLE;

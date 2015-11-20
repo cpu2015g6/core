@@ -80,9 +80,17 @@ begin
 					when NOT_op =>
 						v.rs(i).common.result := not ra_data;
 					when SLL_op =>
-						v.rs(i).common.result := std_logic_vector(shift_left(unsigned(ra_data), to_integer(unsigned(rb_data(4 downto 0)))));
+						if rb_data(31 downto 5) = (26 downto 0 => '0') then
+							v.rs(i).common.result := std_logic_vector(shift_left(unsigned(ra_data), to_integer(unsigned(rb_data(4 downto 0)))));
+						else
+							v.rs(i).common.result := (others => '0');
+						end if;
 					when SRL_op =>
-						v.rs(i).common.result := std_logic_vector(shift_right(unsigned(ra_data), to_integer(unsigned(rb_data(4 downto 0)))));
+						if rb_data(31 downto 5) = (26 downto 0 => '0') then
+							v.rs(i).common.result := std_logic_vector(shift_right(unsigned(ra_data), to_integer(unsigned(rb_data(4 downto 0)))));
+						else
+							v.rs(i).common.result := (others => '0');
+						end if;
 					when CMP_op =>
 						if signed(ra_data) > signed(rb_data) then
 							v.rs(i).common.result := gt_const;

@@ -30,3 +30,10 @@ Tomasuloのアルゴリズムによるアウトオブオーダー実行を行う
 ROBを利用してin-orderにレジスタに結果を書き込む。
 
 ## 実装した命令
+
+## プログラムローダー
+ロードするバイナリの形式は
+- size of .text (4 byte)
+- size of .data (4 byte)
+- .text section
+- .data section
