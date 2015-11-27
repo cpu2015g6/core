@@ -48,7 +48,6 @@ begin
 	end process;
 	process(alu_in, r)
 		variable v : reg_type;
-		variable exec_done : boolean;
 		variable ra_data : std_logic_vector(31 downto 0);
 		variable rb_data : std_logic_vector(31 downto 0);
 	begin
@@ -59,9 +58,8 @@ begin
 			v.rs(i).common.rb := register_update(r.rs(i).common.rb, alu_in.cdb_in);
 		end loop;
 		-- execute
-		exec_done := false;
 		for i in v.rs'range loop
-			if rs_common_ready(v.rs(i).common) and not exec_done then
+			if rs_common_ready(v.rs(i).common) then
 				ra_data := v.rs(i).common.ra.data;
 				rb_data := v.rs(i).common.rb.data;
 				case v.rs(i).op is
@@ -104,7 +102,6 @@ begin
 				end case;
 				v.rs(i).common.state := RS_Done;
 				v.rs(i).common.pc_next := std_logic_vector(unsigned(v.rs(i).common.pc) + 1);
-				exec_done := true;
 			end if;
 		end loop;
 		-- store new rs contents
