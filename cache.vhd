@@ -166,16 +166,16 @@ end cache;
 
 architecture twoproc of cache is
 	type load_hist_entry_type is record
-		valid : std_logic;
+		valid, obsolete : std_logic;
 		addr : std_logic_vector(19 downto 0);
 		port_waiting : std_logic_vector(2**port_width-1 downto 0);
 	end record;
 	constant load_hist_entry_zero : load_hist_entry_type := (
-		'0',
+		'0', '0',
 		(others => '0'),
 		(others => '0')
 	);
-	type load_hist_type is array (0 to 3) of load_hist_entry_type;
+	type load_hist_type is array (0 to 5) of load_hist_entry_type;
 	type reg_type is record
 		busy : std_logic;
 		free_port : std_logic_vector(2**port_width-1 downto 0);
@@ -264,6 +264,7 @@ begin
 --		douta => douta,
 --		doutb => doutb
 --	);
+	busy <= r.busy;
 	ina_we(0) <= ina.we;
 	inb_we(0) <= inb.we;
 	blockram : bram
@@ -294,6 +295,8 @@ begin
 		variable douta_decoded, doutb_decoded : cache_entry_type;
 		variable douta_victim : victim_entry_type;
 		variable victim_oldest : victim_entry_type;
+		variable lh_ent : load_hist_entry_type;
+		variable load_hist_hit : integer;
 		variable victim_oldest_i : integer;
 --		variable prev_in_bram_write : cache_entry_type;
 		variable victim_read_num : integer;
@@ -323,19 +326,31 @@ begin
 		v.load_hist(0) := load_hist_entry_zero;
 		v.load_hist(1 to v.load_hist'length-1) := r.load_hist(0 to v.load_hist'length-2);
 		victim_read_num := to_integer(unsigned(r.victim_read_num));
-		douta_victim := to_victim_entry_type(douta_decoded, r.prev_in.addr(cache_width-1 downto 0));
-		if r.load_hist(r.load_hist'length-1).valid = '1' then
-			inb_v.din := (
-				valid => '1',
-				modified => '0',
---				addr => r.load_hist(r.load_hist'length-1).addr
-				tag => r.load_hist(r.load_hist'length-1).addr(19 downto 20-cache_width),
-				data => sramifout.rd
-			);
-		end if;
+		-- search load history
+		load_hist_hit := -1;
+		for i in 0 to r.load_hist'length-2 loop
+			if r.load_hist(i).addr = addr and r.load_hist(i).obsolete = '0' then
+				load_hist_hit := i;
+			end if;
+		end loop;
 		case r.prev_in.op is
 		when NOP_op =>
+			douta_victim := to_victim_entry_type(douta_decoded, lh_ent.addr(cache_width-1 downto 0));
+			lh_ent := r.load_hist(r.load_hist'length-1);
+			if lh_ent.valid = '1' then
+				victim_oldest_i := oldest_victim(r.victim.log);
+				victim_oldest := r.victim.varray(victim_oldest_i);
+				v.victim := replace(r.victim, victim_oldest_i, douta_victim);
+				if victim_oldest.modified = '1' then
+					sramifin_v := (
+						op => SRAM_STORE,
+						addr => victim_oldest.addr,
+						wd => victim_oldest.data
+					);
+				end if;
+			end if;
 		when READ_op =>
+			douta_victim := to_victim_entry_type(douta_decoded, r.prev_in.addr(cache_width-1 downto 0));
 			if hit(r.prev_in.addr, douta_decoded) then
 				out_port_v(to_integer(unsigned(r.prev_in.id))) := (
 					data => douta_decoded.data,
@@ -363,6 +378,7 @@ begin
 				);
 			end if;
 		when WRITE_op =>
+			douta_victim := to_victim_entry_type(douta_decoded, r.prev_in.addr(cache_width-1 downto 0));
 			if hit(r.prev_in.addr, decode(douta)) then
 				-- do nothing
 			elsif r.victim_read.valid = '1' then
@@ -382,6 +398,27 @@ begin
 		end case;
 		case op_v is
 		when NOP_op =>
+			lh_ent := r.load_hist(r.load_hist'length-2);
+			if lh_ent.valid = '1' then
+				ina_v := (
+					we => '1',
+					addr => lh_ent.addr(cache_width-1 downto 0),
+					din => (
+						valid => '1',
+						modified => '0',
+						tag => lh_ent.addr(19 downto 20-cache_width),
+						data => sramifout.rd
+					)
+				);
+				for i in lh_ent.port_waiting'range loop
+					if lh_ent.port_waiting(i) = '1' then
+						out_port_v(i) := (
+							data => sramifout.rd,
+							en => '1'
+						);
+					end if;
+				end loop;
+			end if;
 		when READ_op =>
 			victim_i := search_victim(v.victim, addr);
 			if victim_i = -1 then
@@ -421,6 +458,11 @@ begin
 				)
 			);
 		end case;
+		if v.free_port = (2**port_width-1 downto 0 => '0') or (v.load_hist(v.load_hist'length-2).valid = '1' and v.load_hist(v.load_hist'length-2).obsolete = '0') then
+			v.busy := '1';
+		else
+			v.busy := '0';
+		end if;
 		r_in <= v;
 		ina <= ina_v;
 		inb <= inb_v;
