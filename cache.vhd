@@ -60,6 +60,15 @@ package cache_pack is
 		(others => victim_entry_zero),
 		(others => '0')
 	);
+	function to_cache_entry_type(victim_entry : victim_entry_type) return cache_entry_type;
+	function to_victim_entry_type(cache_entry : cache_entry_type; loweraddr : std_logic_vector(cache_width-1 downto 0)) return victim_entry_type;
+	function oldest_victim(log : std_logic_vector(5 downto 0)) return integer;
+	function search_victim(victim : victim_type; addr: std_logic_vector(19 downto 0)) return integer;
+	function hit(addr : std_logic_vector(19 downto 0); cache_entry : cache_entry_type) return boolean;
+	function replace(victim : victim_type; i : integer; entry : victim_entry_type) return victim_type;
+end cache_pack;
+
+package body cache_pack is
 	function to_cache_entry_type(victim_entry : victim_entry_type) return cache_entry_type is
 	begin
 		return (
@@ -107,43 +116,6 @@ package cache_pack is
 	end replace;
 end cache_pack;
 
---library ieee;
---use ieee.std_logic_1164.all;
---use ieee.numeric_std.all;
---use work.cache_pack.all;
---
---entity bram_cache is
---	generic(
---		awidth : integer
---	);
---	port(
---		clk : in std_logic;
---		wea, web : in std_logic;
---		addra, addrb : in std_logic_vector(awidth-1 downto 0);
---		dina, dinb : in cache_entry_type;
---		douta, doutb : out cache_entry_type
---	);
---end entity;
---
---architecture beh of bram_cache is
---	type ram_type is array(0 to 2**awidth-1) of cache_entry_type;
---	signal ram : ram_type := (others => cache_entry_zero);
---begin
---	process(clk)
---	begin
---		if rising_edge(clk) then
---			douta <= ram(to_integer(unsigned(addra)));
---			doutb <= ram(to_integer(unsigned(addrb)));
---			if wea = '1' then
---				ram(to_integer(unsigned(addra))) <= dina;
---			end if;
---			if web = '1' then
---				ram(to_integer(unsigned(addrb))) <= dinb;
---			end if;
---		end if;
---	end process;
---end;
-
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
@@ -178,7 +150,7 @@ architecture twoproc of cache is
 	type load_hist_type is array (0 to 5) of load_hist_entry_type;
 	type reg_type is record
 		busy : std_logic;
-		free_port : std_logic_vector(2**port_width-1 downto 0);
+		used_port : std_logic_vector(2**port_width-1 downto 0);
 		prev_in : in_type;
 		victim : victim_type;
 		victim_read_num : std_logic_vector(victim_width-1 downto 0);
@@ -223,7 +195,6 @@ COMPONENT bram IS
     doutb : OUT STD_LOGIC_VECTOR(43 DOWNTO 0)
   );
 END COMPONENT;
---	signal douta, doutb : cache_entry_type;
 	signal douta, doutb : std_logic_vector(43 downto 0);
 	function encode(e : cache_entry_type) return std_logic_vector is
 	begin
@@ -251,20 +222,8 @@ END COMPONENT;
 	signal ina, inb : bram_in_type := bram_in_zero;
 	signal ina_we, inb_we : std_logic_vector(0 downto 0) := "0";
 begin
---	bram : bram_cache
---	generic map(awidth => cache_width)
---	port map(
---		clk => clk,
---		wea => wea,
---		web => web,
---		addra => addra,
---		addrb => addrb,
---		dina => dina,
---		dinb => dinb,
---		douta => douta,
---		doutb => doutb
---	);
 	busy <= r.busy;
+	id <= r.id;
 	ina_we(0) <= ina.we;
 	inb_we(0) <= inb.we;
 	blockram : bram
@@ -298,7 +257,6 @@ begin
 		variable lh_ent : load_hist_entry_type;
 		variable load_hist_hit : integer;
 		variable victim_oldest_i : integer;
---		variable prev_in_bram_write : cache_entry_type;
 		variable victim_read_num : integer;
 		variable victim_i : integer;
 		variable sramifin_v : sramif_in;
@@ -311,7 +269,6 @@ begin
 		op_v := op;
 		douta_decoded := decode(douta);
 		doutb_decoded := decode(doutb);
---		prev_in_bram_write := cache_entry_zero;
 		out_port_v := (others => out_port_zero);
 		sramifin_v := sramif_in_zero;
 		if r.busy = '1' then
@@ -323,8 +280,6 @@ begin
 			data => din,
 			addr => addr
 		);
-		v.load_hist(0) := load_hist_entry_zero;
-		v.load_hist(1 to v.load_hist'length-1) := r.load_hist(0 to v.load_hist'length-2);
 		victim_read_num := to_integer(unsigned(r.victim_read_num));
 		-- search load history
 		load_hist_hit := -1;
@@ -337,7 +292,7 @@ begin
 		when NOP_op =>
 			douta_victim := to_victim_entry_type(douta_decoded, lh_ent.addr(cache_width-1 downto 0));
 			lh_ent := r.load_hist(r.load_hist'length-1);
-			if lh_ent.valid = '1' then
+			if lh_ent.valid = '1' and lh_ent.obsolete = '0' then
 				victim_oldest_i := oldest_victim(r.victim.log);
 				victim_oldest := r.victim.varray(victim_oldest_i);
 				v.victim := replace(r.victim, victim_oldest_i, douta_victim);
@@ -352,13 +307,14 @@ begin
 		when READ_op =>
 			douta_victim := to_victim_entry_type(douta_decoded, r.prev_in.addr(cache_width-1 downto 0));
 			if hit(r.prev_in.addr, douta_decoded) then
+				v.used_port(to_integer(unsigned(r.prev_in.id))) := '0';
 				out_port_v(to_integer(unsigned(r.prev_in.id))) := (
 					data => douta_decoded.data,
 					en => '1'
 				);
 			elsif r.victim_read.valid = '1' then
-				--prev_in_bram_write := to_cache_entry_type(r.victim_read);
 				v.victim := replace(r.victim, victim_read_num, douta_victim);
+				v.used_port(to_integer(unsigned(r.prev_in.id))) := '0';
 				out_port_v(to_integer(unsigned(r.prev_in.id))) := (
 					data => r.victim_read.data,
 					en => '1'
@@ -373,6 +329,7 @@ begin
 				port_waiting_v(to_integer(unsigned(r.prev_in.id))) := '1';
 				v.load_hist(0) := (
 					valid => '1',
+					obsolete => '0',
 					addr => r.prev_in.addr,
 					port_waiting => port_waiting_v
 				);
@@ -400,18 +357,21 @@ begin
 		when NOP_op =>
 			lh_ent := r.load_hist(r.load_hist'length-2);
 			if lh_ent.valid = '1' then
-				ina_v := (
-					we => '1',
-					addr => lh_ent.addr(cache_width-1 downto 0),
-					din => (
-						valid => '1',
-						modified => '0',
-						tag => lh_ent.addr(19 downto 20-cache_width),
-						data => sramifout.rd
-					)
-				);
+				if lh_ent.obsolete = '0' then
+					ina_v := (
+						we => '1',
+						addr => lh_ent.addr(cache_width-1 downto 0),
+						din => (
+							valid => '1',
+							modified => '0',
+							tag => lh_ent.addr(19 downto 20-cache_width),
+							data => sramifout.rd
+						)
+					);
+				end if;
 				for i in lh_ent.port_waiting'range loop
 					if lh_ent.port_waiting(i) = '1' then
+						v.used_port(i) := '0';
 						out_port_v(i) := (
 							data => sramifout.rd,
 							en => '1'
@@ -420,8 +380,11 @@ begin
 				end loop;
 			end if;
 		when READ_op =>
+			v.used_port(to_integer(unsigned(r.id))) := '1';
 			victim_i := search_victim(v.victim, addr);
-			if victim_i = -1 then
+			if load_hist_hit /= -1 then
+				v.load_hist(load_hist_hit).port_waiting(to_integer(unsigned(r.id))) := '1';
+			elsif victim_i = -1 then
 				v.victim_read := victim_entry_zero;
 				v.victim_read_num := (others => '0');
 				ina_v := (
@@ -440,7 +403,9 @@ begin
 			end if;
 		when WRITE_op =>
 			victim_i := search_victim(v.victim, addr);
-			if victim_i = -1 then
+			if load_hist_hit /= -1 then
+				v.load_hist(load_hist_hit).obsolete := '1';
+			elsif victim_i = -1 then
 				v.victim_read := victim_entry_zero;
 				v.victim_read_num := (others => '0');
 			else
@@ -458,14 +423,23 @@ begin
 				)
 			);
 		end case;
-		if v.free_port = (2**port_width-1 downto 0 => '0') or (v.load_hist(v.load_hist'length-2).valid = '1' and v.load_hist(v.load_hist'length-2).obsolete = '0') then
+		if v.used_port = (2**port_width-1 downto 0 => '1') or (v.load_hist(v.load_hist'length-2).valid = '1' and v.load_hist(v.load_hist'length-2).obsolete = '0') then
 			v.busy := '1';
 		else
 			v.busy := '0';
 		end if;
+		v.id := (others => '0');
+		for i in v.used_port'range loop
+			if v.used_port(i) = '0' then
+				v.id := std_logic_vector(to_unsigned(i, port_width));
+			end if;
+		end loop;
+		v.load_hist(0) := load_hist_entry_zero;
+		v.load_hist(1 to v.load_hist'length-1) := v.load_hist(0 to v.load_hist'length-2);
 		r_in <= v;
 		ina <= ina_v;
 		inb <= inb_v;
+		sramifin <= sramifin_v;
 		out_port <= out_port_v;
 	end process;
 end;
