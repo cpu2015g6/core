@@ -60,6 +60,7 @@ package cache_pack is
 		(others => victim_entry_zero),
 		(others => '0')
 	);
+	function set_newest(log : log_type; i : integer) return log_type;
 	function to_cache_entry_type(victim_entry : victim_entry_type) return cache_entry_type;
 	function to_victim_entry_type(cache_entry : cache_entry_type; loweraddr : std_logic_vector(cache_width-1 downto 0)) return victim_entry_type;
 	function oldest_victim(log : std_logic_vector(5 downto 0)) return integer;
@@ -87,17 +88,55 @@ package body cache_pack is
 			data => cache_entry.data
 		);
 	end to_victim_entry_type;
+--   newer
+--  |0|1|2|3
+-- 0| | | | 
+-- 1|0| | | 
+-- 2|1|3| | 
+-- 3|2|4|5| 
 	function oldest_victim(log : std_logic_vector(5 downto 0)) return integer is
 	begin
-		return 0;
+		if log(0) = '0' and log(1) = '0' and log(2) = '0' then
+			return 0;
+		elsif log(0) = '1' and log(3) = '0' and log(4) = '0' then
+			return 1;
+		elsif log(1) = '1' and log(3) = '1' and log(5) = '0' then
+			return 2;
+		--elsif log(2) = '1' and log(4) = '1' and log(5) = '1' then
+		--	return 3;
+		else
+			return 3;
+		end if;
 	end oldest_victim;
---	function set_newest(log : log_type; i : integer) return log_type;
+	function set_newest(log : log_type; i : integer) return log_type is
+		variable ret : log_type;
+	begin
+		ret := log;
+		if i = 0 then
+			ret(0) := '1';
+			ret(1) := '1';
+			ret(2) := '1';
+		elsif i = 1 then
+			ret(0) := '0';
+			ret(3) := '1';
+			ret(4) := '1';
+		elsif i = 2 then
+			ret(1) := '0';
+			ret(3) := '0';
+			ret(5) := '1';
+		elsif i = 3 then
+			ret(2) := '0';
+			ret(4) := '0';
+			ret(5) := '0';
+		end if;
+		return ret;
+	end set_newest;
 	function search_victim(victim : victim_type; addr: std_logic_vector(19 downto 0)) return integer is
 		variable ret : integer;
 	begin
 		ret := -1;
 		for i in victim.varray'range loop
-			if victim.varray(i).addr = addr then
+			if victim.varray(i).addr = addr and victim.varray(i).valid = '1' then
 				ret := i;
 			end if;
 		end loop;
@@ -111,7 +150,12 @@ package body cache_pack is
 		variable v : victim_type;
 	begin
 		v := victim;
-		v.varray(i) := entry;
+		if entry.valid = '1' then
+			v.varray(i) := entry;
+			v.log := set_newest(v.log, i);
+		else
+			v.varray(i) := victim_entry_zero;
+		end if;
 		return v;
 	end replace;
 end cache_pack;
@@ -149,7 +193,7 @@ architecture twoproc of cache is
 	);
 	type load_hist_type is array (0 to 5) of load_hist_entry_type;
 	type reg_type is record
-		busy : std_logic;
+		busy : boolean;
 		used_port : std_logic_vector(2**port_width-1 downto 0);
 		prev_in : in_type;
 		victim : victim_type;
@@ -159,7 +203,7 @@ architecture twoproc of cache is
 		load_hist : load_hist_type;
 	end record;
 	constant rzero : reg_type := (
-		'0',
+		false,
 		(others => '0'),
 		in_zero,
 		victim_zero,
@@ -222,7 +266,7 @@ END COMPONENT;
 	signal ina, inb : bram_in_type := bram_in_zero;
 	signal ina_we, inb_we : std_logic_vector(0 downto 0) := "0";
 begin
-	busy <= r.busy;
+	busy <= '1' when r.busy else '0';
 	id <= r.id;
 	ina_we(0) <= ina.we;
 	inb_we(0) <= inb.we;
@@ -246,7 +290,7 @@ begin
 			r <= r_in;
 		end if;
 	end process;
-	process(r, douta, doutb, op, din, addr, sramifout)
+	comb: process(r, douta, doutb, op, din, addr, sramifout)
 		variable v : reg_type;
 		variable op_v : op_type;
 		variable ina_v, inb_v : bram_in_type;
@@ -254,7 +298,7 @@ begin
 		variable douta_decoded, doutb_decoded : cache_entry_type;
 		variable douta_victim : victim_entry_type;
 		variable victim_oldest : victim_entry_type;
-		variable lh_ent : load_hist_entry_type;
+		variable lh_ent, lh0 : load_hist_entry_type;
 		variable load_hist_hit : integer;
 		variable victim_oldest_i : integer;
 		variable victim_read_num : integer;
@@ -271,7 +315,7 @@ begin
 		doutb_decoded := decode(doutb);
 		out_port_v := (others => out_port_zero);
 		sramifin_v := sramif_in_zero;
-		if r.busy = '1' then
+		if r.busy then
 			op_v := NOP_op;
 		end if;
 		v.prev_in := (
@@ -282,17 +326,42 @@ begin
 		);
 		victim_read_num := to_integer(unsigned(r.victim_read_num));
 		-- search load history
-		load_hist_hit := -1;
-		for i in 0 to r.load_hist'length-2 loop
-			if r.load_hist(i).addr = addr and r.load_hist(i).obsolete = '0' then
-				load_hist_hit := i;
+
+		lh_ent := r.load_hist(r.load_hist'length-2);
+		if lh_ent.valid = '1' then
+			report "load completed" severity note;
+			if lh_ent.obsolete = '0' then
+				assert r.busy report "BUG";
+				report "write to bram" severity note;
+				ina_v := (
+					we => '1',
+					addr => lh_ent.addr(cache_width-1 downto 0),
+					din => (
+						valid => '1',
+						modified => '0',
+						tag => lh_ent.addr(19 downto 20-cache_width),
+						data => sramifout.rd
+					)
+				);
 			end if;
-		end loop;
+			for i in lh_ent.port_waiting'range loop
+				if lh_ent.port_waiting(i) = '1' then
+					v.used_port(i) := '0';
+					out_port_v(i) := (
+						data => sramifout.rd,
+						en => '1'
+					);
+				end if;
+			end loop;
+		end if;
+
+		lh0 := load_hist_entry_zero;
 		case r.prev_in.op is
 		when NOP_op =>
 			douta_victim := to_victim_entry_type(douta_decoded, lh_ent.addr(cache_width-1 downto 0));
 			lh_ent := r.load_hist(r.load_hist'length-1);
 			if lh_ent.valid = '1' and lh_ent.obsolete = '0' then
+				report "write to victim" severity note;
 				victim_oldest_i := oldest_victim(r.victim.log);
 				victim_oldest := r.victim.varray(victim_oldest_i);
 				v.victim := replace(r.victim, victim_oldest_i, douta_victim);
@@ -307,12 +376,14 @@ begin
 		when READ_op =>
 			douta_victim := to_victim_entry_type(douta_decoded, r.prev_in.addr(cache_width-1 downto 0));
 			if hit(r.prev_in.addr, douta_decoded) then
+				report "previous read: bram hit" severity note;
 				v.used_port(to_integer(unsigned(r.prev_in.id))) := '0';
 				out_port_v(to_integer(unsigned(r.prev_in.id))) := (
 					data => douta_decoded.data,
 					en => '1'
 				);
 			elsif r.victim_read.valid = '1' then
+				report "previous read: victim hit" severity note;
 				v.victim := replace(r.victim, victim_read_num, douta_victim);
 				v.used_port(to_integer(unsigned(r.prev_in.id))) := '0';
 				out_port_v(to_integer(unsigned(r.prev_in.id))) := (
@@ -320,6 +391,7 @@ begin
 					en => '1'
 				);
 			else
+				report "previous read: miss" severity note;
 				sramifin_v := (
 					op => SRAM_LOAD,
 					addr => r.prev_in.addr,
@@ -327,7 +399,7 @@ begin
 				);
 				port_waiting_v := (others => '0');
 				port_waiting_v(to_integer(unsigned(r.prev_in.id))) := '1';
-				v.load_hist(0) := (
+				lh0 := (
 					valid => '1',
 					obsolete => '0',
 					addr => r.prev_in.addr,
@@ -337,14 +409,18 @@ begin
 		when WRITE_op =>
 			douta_victim := to_victim_entry_type(douta_decoded, r.prev_in.addr(cache_width-1 downto 0));
 			if hit(r.prev_in.addr, decode(douta)) then
+				report "previous write: bram hit" severity note;
 				-- do nothing
 			elsif r.victim_read.valid = '1' then
+				report "previous write: victim hit" severity note;
 				v.victim := replace(r.victim, victim_read_num, douta_victim);
 			else
+				report "previous write: miss" severity note;
 				victim_oldest_i := oldest_victim(r.victim.log);
 				victim_oldest := r.victim.varray(victim_oldest_i);
 				v.victim := replace(r.victim, victim_oldest_i, douta_victim);
 				if victim_oldest.modified = '1' then
+					report "previous write: write back" severity note;
 					sramifin_v := (
 						op => SRAM_STORE,
 						addr => victim_oldest.addr,
@@ -353,38 +429,26 @@ begin
 				end if;
 			end if;
 		end case;
+
+		v.load_hist(1 to v.load_hist'length-1) := v.load_hist(0 to v.load_hist'length-2);
+		v.load_hist(0) := lh0;
+		load_hist_hit := -1;
+		for i in 0 to v.load_hist'length-2 loop
+			if v.load_hist(i).addr = addr and v.load_hist(i).valid = '1' and v.load_hist(i).obsolete = '0' then
+				load_hist_hit := i;
+			end if;
+		end loop;
 		case op_v is
 		when NOP_op =>
-			lh_ent := r.load_hist(r.load_hist'length-2);
-			if lh_ent.valid = '1' then
-				if lh_ent.obsolete = '0' then
-					ina_v := (
-						we => '1',
-						addr => lh_ent.addr(cache_width-1 downto 0),
-						din => (
-							valid => '1',
-							modified => '0',
-							tag => lh_ent.addr(19 downto 20-cache_width),
-							data => sramifout.rd
-						)
-					);
-				end if;
-				for i in lh_ent.port_waiting'range loop
-					if lh_ent.port_waiting(i) = '1' then
-						v.used_port(i) := '0';
-						out_port_v(i) := (
-							data => sramifout.rd,
-							en => '1'
-						);
-					end if;
-				end loop;
-			end if;
 		when READ_op =>
 			v.used_port(to_integer(unsigned(r.id))) := '1';
 			victim_i := search_victim(v.victim, addr);
 			if load_hist_hit /= -1 then
+				report "read: load history hit" severity note;
 				v.load_hist(load_hist_hit).port_waiting(to_integer(unsigned(r.id))) := '1';
+				v.prev_in.op := NOP_op;
 			elsif victim_i = -1 then
+				report "read: victim miss" severity note;
 				v.victim_read := victim_entry_zero;
 				v.victim_read_num := (others => '0');
 				ina_v := (
@@ -393,7 +457,9 @@ begin
 					din => cache_entry_zero
 				);
 			else
+				report "read: victim hit" severity note;
 				v.victim_read := v.victim.varray(victim_i);
+				v.victim.log := set_newest(v.victim.log, victim_i);
 				v.victim_read_num := std_logic_vector(to_unsigned(victim_i, victim_width));
 				ina_v := (
 					we => '1',
@@ -404,11 +470,14 @@ begin
 		when WRITE_op =>
 			victim_i := search_victim(v.victim, addr);
 			if load_hist_hit /= -1 then
+				report "write: load history hit" severity note;
 				v.load_hist(load_hist_hit).obsolete := '1';
 			elsif victim_i = -1 then
+				report "write: victim miss" severity note;
 				v.victim_read := victim_entry_zero;
 				v.victim_read_num := (others => '0');
 			else
+				report "write: victim hit" severity note;
 				v.victim_read := v.victim.varray(victim_i);
 				v.victim_read_num := std_logic_vector(to_unsigned(victim_i, victim_width));
 			end if;
@@ -424,9 +493,9 @@ begin
 			);
 		end case;
 		if v.used_port = (2**port_width-1 downto 0 => '1') or (v.load_hist(v.load_hist'length-2).valid = '1' and v.load_hist(v.load_hist'length-2).obsolete = '0') then
-			v.busy := '1';
+			v.busy := true;
 		else
-			v.busy := '0';
+			v.busy := false;
 		end if;
 		v.id := (others => '0');
 		for i in v.used_port'range loop
@@ -434,9 +503,8 @@ begin
 				v.id := std_logic_vector(to_unsigned(i, port_width));
 			end if;
 		end loop;
-		v.load_hist(0) := load_hist_entry_zero;
-		v.load_hist(1 to v.load_hist'length-1) := v.load_hist(0 to v.load_hist'length-2);
 		r_in <= v;
+		inb_v.addr := (others => '1');
 		ina <= ina_v;
 		inb <= inb_v;
 		sramifin <= sramifin_v;
