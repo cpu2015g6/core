@@ -204,6 +204,7 @@ begin
 				victim_oldest := r.victim.varray(victim_oldest_i);
 				v.victim := replace(r.victim, victim_oldest_i, douta_victim);
 				if victim_oldest.modified = '1' then
+					assert victim_oldest.valid = '1' report "BUG";
 					sramifin_v := (
 						op => SRAM_STORE,
 						addr => victim_oldest.addr,
@@ -284,7 +285,7 @@ begin
 			if load_hist_hit /= -1 then
 				report "read: load history hit" severity note;
 				v.load_hist(load_hist_hit).port_waiting(to_integer(unsigned(r.id))) := '1';
-				v.prev_in.op := NOP_cache_op;
+				v.prev_in := cache_in_zero;
 			elsif victim_i = -1 then
 				report "read: victim miss" severity note;
 				v.victim_read := victim_entry_zero;
@@ -310,7 +311,8 @@ begin
 			if load_hist_hit /= -1 then
 				report "write: load history hit" severity note;
 				v.load_hist(load_hist_hit).obsolete := '1';
-			elsif victim_i = -1 then
+			end if;
+			if victim_i = -1 then
 				report "write: victim miss" severity note;
 				v.victim_read := victim_entry_zero;
 				v.victim_read_num := (others => '0');
