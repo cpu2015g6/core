@@ -258,7 +258,170 @@ end fpu_pack;
 
 library ieee;
 use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+package cache_pack is
+	type cache_op_type is (READ_cache_op, WRITE_cache_op, NOP_cache_op);
+	constant cache_width : integer := 10;
+	constant port_width : integer := 2;
+	subtype id_type is std_logic_vector(port_width-1 downto 0);
+	constant id_zero : id_type := (others => '0');
+	type cache_in_type is record
+		id : id_type;
+		op : cache_op_type;
+		addr : std_logic_vector(19 downto 0);
+		data : std_logic_vector(31 downto 0);
+	end record;
+	constant cache_in_zero : cache_in_type := (
+		id_zero,
+		NOP_cache_op,
+		(others => '0'),
+		(others => '0')
+	);
+	type out_port_type is record
+		data : std_logic_vector(31 downto 0);
+		en : std_logic;
+	end record;
+	constant out_port_zero : out_port_type := (
+		(others => '0'),
+		'0'
+	);
+	type out_port_array_type is array (0 to 2**port_width-1) of out_port_type;
+	type cache_entry_type is record
+		modified, valid : std_logic;
+		tag : std_logic_vector(20-1-cache_width downto 0);
+		data : std_logic_vector(31 downto 0);
+	end record;
+	constant cache_entry_zero : cache_entry_type := (
+		'0', '0',
+		(others => '0'),
+		(others => '0')
+	);
+	type victim_entry_type is record
+		modified, valid : std_logic;
+		addr : std_logic_vector(19 downto 0);
+		data : std_logic_vector(31 downto 0);
+	end record;
+	constant victim_entry_zero : victim_entry_type := (
+		'0', '0',
+		(others => '0'),
+		(others => '0')
+	);
+	constant victim_width : integer := 2;
+	constant victim_size : integer := victim_width**2;
+	subtype log_type is std_logic_vector((victim_size*(victim_size-1))/2 - 1 downto 0);
+	type victim_array_type is array(0 to victim_size-1) of victim_entry_type;
+	type victim_type is record
+		varray : victim_array_type;
+		log : log_type;
+	end record;
+	constant victim_zero : victim_type := (
+		(others => victim_entry_zero),
+		(others => '0')
+	);
+	function set_newest(log : log_type; i : integer) return log_type;
+	function to_cache_entry_type(victim_entry : victim_entry_type) return cache_entry_type;
+	function to_victim_entry_type(cache_entry : cache_entry_type; loweraddr : std_logic_vector(cache_width-1 downto 0)) return victim_entry_type;
+	function oldest_victim(log : std_logic_vector(5 downto 0)) return integer;
+	function search_victim(victim : victim_type; addr: std_logic_vector(19 downto 0)) return integer;
+	function hit(addr : std_logic_vector(19 downto 0); cache_entry : cache_entry_type) return boolean;
+	function replace(victim : victim_type; i : integer; entry : victim_entry_type) return victim_type;
+end cache_pack;
+
+package body cache_pack is
+	function to_cache_entry_type(victim_entry : victim_entry_type) return cache_entry_type is
+	begin
+		return (
+			valid => victim_entry.valid,
+			modified => victim_entry.modified,
+			tag => victim_entry.addr(19 downto 20-cache_width),
+			data => victim_entry.data
+		);
+	end to_cache_entry_type;
+	function to_victim_entry_type(cache_entry : cache_entry_type; loweraddr : std_logic_vector(cache_width-1 downto 0)) return victim_entry_type is
+	begin
+		return (
+			valid => cache_entry.valid,
+			modified => cache_entry.modified,
+			addr => cache_entry.tag & loweraddr,
+			data => cache_entry.data
+		);
+	end to_victim_entry_type;
+--   newer
+--  |0|1|2|3
+-- 0| | | | 
+-- 1|0| | | 
+-- 2|1|3| | 
+-- 3|2|4|5| 
+	function oldest_victim(log : std_logic_vector(5 downto 0)) return integer is
+	begin
+		if log(0) = '0' and log(1) = '0' and log(2) = '0' then
+			return 0;
+		elsif log(0) = '1' and log(3) = '0' and log(4) = '0' then
+			return 1;
+		elsif log(1) = '1' and log(3) = '1' and log(5) = '0' then
+			return 2;
+		--elsif log(2) = '1' and log(4) = '1' and log(5) = '1' then
+		--	return 3;
+		else
+			return 3;
+		end if;
+	end oldest_victim;
+	function set_newest(log : log_type; i : integer) return log_type is
+		variable ret : log_type;
+	begin
+		ret := log;
+		if i = 0 then
+			ret(0) := '1';
+			ret(1) := '1';
+			ret(2) := '1';
+		elsif i = 1 then
+			ret(0) := '0';
+			ret(3) := '1';
+			ret(4) := '1';
+		elsif i = 2 then
+			ret(1) := '0';
+			ret(3) := '0';
+			ret(5) := '1';
+		elsif i = 3 then
+			ret(2) := '0';
+			ret(4) := '0';
+			ret(5) := '0';
+		end if;
+		return ret;
+	end set_newest;
+	function search_victim(victim : victim_type; addr: std_logic_vector(19 downto 0)) return integer is
+		variable ret : integer;
+	begin
+		ret := -1;
+		for i in victim.varray'range loop
+			if victim.varray(i).addr = addr and victim.varray(i).valid = '1' then
+				ret := i;
+			end if;
+		end loop;
+		return ret;
+	end search_victim;
+	function hit(addr : std_logic_vector(19 downto 0); cache_entry : cache_entry_type) return boolean is
+	begin
+		return (addr(19 downto 20-cache_width) = cache_entry.tag) and (cache_entry.valid = '1');
+	end hit;
+	function replace(victim : victim_type; i : integer; entry : victim_entry_type) return victim_type is
+		variable v : victim_type;
+	begin
+		v := victim;
+		if entry.valid = '1' then
+			v.varray(i) := entry;
+			v.log := set_newest(v.log, i);
+		else
+			v.varray(i) := victim_entry_zero;
+		end if;
+		return v;
+	end replace;
+end cache_pack;
+
+library ieee;
+use ieee.std_logic_1164.all;
 use work.common.all;
+use work.cache_pack.all;
 package mem_pack is
 --	type op_type is (IN_op, OUT_op, LOAD_op, STORE_op, NOP_op);
 	subtype op_type is std_logic_vector(2 downto 0);
@@ -271,11 +434,13 @@ package mem_pack is
 		op : op_type;
 		has_dummy : std_logic;
 		common : rs_common_type;
+		id : id_type;
 	end record;
 	constant rs_zero : rs_type := (
 		NOP_op,
 		'0',
-		rs_common_zero
+		rs_common_zero,
+		(others => '0')
 	);
 	type rs_array_type is array (0 to 2**rs_num_width-1) of rs_type;
 	type in_type is record

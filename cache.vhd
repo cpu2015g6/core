@@ -1,175 +1,13 @@
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
-package cache_pack is
-	type op_type is (READ_op, WRITE_op, NOP_op);
-	constant cache_width : integer := 10;
-	constant port_width : integer := 2;
-	subtype id_type is std_logic_vector(port_width-1 downto 0);
-	constant id_zero : id_type := (others => '0');
-	type in_type is record
-		id : id_type;
-		op : op_type;
-		addr : std_logic_vector(19 downto 0);
-		data : std_logic_vector(31 downto 0);
-	end record;
-	constant in_zero : in_type := (
-		id_zero,
-		NOP_op,
-		(others => '0'),
-		(others => '0')
-	);
-	type out_port_type is record
-		data : std_logic_vector(31 downto 0);
-		en : std_logic;
-	end record;
-	constant out_port_zero : out_port_type := (
-		(others => '0'),
-		'0'
-	);
-	type out_port_array_type is array (0 to 2**port_width-1) of out_port_type;
-	type cache_entry_type is record
-		modified, valid : std_logic;
-		tag : std_logic_vector(20-1-cache_width downto 0);
-		data : std_logic_vector(31 downto 0);
-	end record;
-	constant cache_entry_zero : cache_entry_type := (
-		'0', '0',
-		(others => '0'),
-		(others => '0')
-	);
-	type victim_entry_type is record
-		modified, valid : std_logic;
-		addr : std_logic_vector(19 downto 0);
-		data : std_logic_vector(31 downto 0);
-	end record;
-	constant victim_entry_zero : victim_entry_type := (
-		'0', '0',
-		(others => '0'),
-		(others => '0')
-	);
-	constant victim_width : integer := 2;
-	constant victim_size : integer := victim_width**2;
-	subtype log_type is std_logic_vector((victim_size*(victim_size-1))/2 - 1 downto 0);
-	type victim_array_type is array(0 to victim_size-1) of victim_entry_type;
-	type victim_type is record
-		varray : victim_array_type;
-		log : log_type;
-	end record;
-	constant victim_zero : victim_type := (
-		(others => victim_entry_zero),
-		(others => '0')
-	);
-	function set_newest(log : log_type; i : integer) return log_type;
-	function to_cache_entry_type(victim_entry : victim_entry_type) return cache_entry_type;
-	function to_victim_entry_type(cache_entry : cache_entry_type; loweraddr : std_logic_vector(cache_width-1 downto 0)) return victim_entry_type;
-	function oldest_victim(log : std_logic_vector(5 downto 0)) return integer;
-	function search_victim(victim : victim_type; addr: std_logic_vector(19 downto 0)) return integer;
-	function hit(addr : std_logic_vector(19 downto 0); cache_entry : cache_entry_type) return boolean;
-	function replace(victim : victim_type; i : integer; entry : victim_entry_type) return victim_type;
-end cache_pack;
-
-package body cache_pack is
-	function to_cache_entry_type(victim_entry : victim_entry_type) return cache_entry_type is
-	begin
-		return (
-			valid => victim_entry.valid,
-			modified => victim_entry.modified,
-			tag => victim_entry.addr(19 downto 20-cache_width),
-			data => victim_entry.data
-		);
-	end to_cache_entry_type;
-	function to_victim_entry_type(cache_entry : cache_entry_type; loweraddr : std_logic_vector(cache_width-1 downto 0)) return victim_entry_type is
-	begin
-		return (
-			valid => cache_entry.valid,
-			modified => cache_entry.modified,
-			addr => cache_entry.tag & loweraddr,
-			data => cache_entry.data
-		);
-	end to_victim_entry_type;
---   newer
---  |0|1|2|3
--- 0| | | | 
--- 1|0| | | 
--- 2|1|3| | 
--- 3|2|4|5| 
-	function oldest_victim(log : std_logic_vector(5 downto 0)) return integer is
-	begin
-		if log(0) = '0' and log(1) = '0' and log(2) = '0' then
-			return 0;
-		elsif log(0) = '1' and log(3) = '0' and log(4) = '0' then
-			return 1;
-		elsif log(1) = '1' and log(3) = '1' and log(5) = '0' then
-			return 2;
-		--elsif log(2) = '1' and log(4) = '1' and log(5) = '1' then
-		--	return 3;
-		else
-			return 3;
-		end if;
-	end oldest_victim;
-	function set_newest(log : log_type; i : integer) return log_type is
-		variable ret : log_type;
-	begin
-		ret := log;
-		if i = 0 then
-			ret(0) := '1';
-			ret(1) := '1';
-			ret(2) := '1';
-		elsif i = 1 then
-			ret(0) := '0';
-			ret(3) := '1';
-			ret(4) := '1';
-		elsif i = 2 then
-			ret(1) := '0';
-			ret(3) := '0';
-			ret(5) := '1';
-		elsif i = 3 then
-			ret(2) := '0';
-			ret(4) := '0';
-			ret(5) := '0';
-		end if;
-		return ret;
-	end set_newest;
-	function search_victim(victim : victim_type; addr: std_logic_vector(19 downto 0)) return integer is
-		variable ret : integer;
-	begin
-		ret := -1;
-		for i in victim.varray'range loop
-			if victim.varray(i).addr = addr and victim.varray(i).valid = '1' then
-				ret := i;
-			end if;
-		end loop;
-		return ret;
-	end search_victim;
-	function hit(addr : std_logic_vector(19 downto 0); cache_entry : cache_entry_type) return boolean is
-	begin
-		return (addr(19 downto 20-cache_width) = cache_entry.tag) and (cache_entry.valid = '1');
-	end hit;
-	function replace(victim : victim_type; i : integer; entry : victim_entry_type) return victim_type is
-		variable v : victim_type;
-	begin
-		v := victim;
-		if entry.valid = '1' then
-			v.varray(i) := entry;
-			v.log := set_newest(v.log, i);
-		else
-			v.varray(i) := victim_entry_zero;
-		end if;
-		return v;
-	end replace;
-end cache_pack;
-
-library ieee;
-use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
 use work.common.all;
 use work.cache_pack.all;
 
 entity cache is
 	port(
 		clk, rst : in std_logic;
-		op : in op_type;
+		op : in cache_op_type;
 		din : in std_logic_vector(31 downto 0);
 		addr : in std_logic_vector(19 downto 0);
 		sramifout : in sramif_out;
@@ -191,11 +29,11 @@ architecture twoproc of cache is
 		(others => '0'),
 		(others => '0')
 	);
-	type load_hist_type is array (0 to 5) of load_hist_entry_type;
+	type load_hist_type is array (0 to 4) of load_hist_entry_type;
 	type reg_type is record
 		busy : boolean;
 		used_port : std_logic_vector(2**port_width-1 downto 0);
-		prev_in : in_type;
+		prev_in : cache_in_type;
 		victim : victim_type;
 		victim_read_num : std_logic_vector(victim_width-1 downto 0);
 		victim_read : victim_entry_type;
@@ -205,7 +43,7 @@ architecture twoproc of cache is
 	constant rzero : reg_type := (
 		false,
 		(others => '0'),
-		in_zero,
+		cache_in_zero,
 		victim_zero,
 		(others => '0'),
 		victim_entry_zero,
@@ -292,7 +130,7 @@ begin
 	end process;
 	comb: process(r, douta, doutb, op, din, addr, sramifout)
 		variable v : reg_type;
-		variable op_v : op_type;
+		variable op_v : cache_op_type;
 		variable ina_v, inb_v : bram_in_type;
 		variable out_port_v : out_port_array_type;
 		variable douta_decoded, doutb_decoded : cache_entry_type;
@@ -316,7 +154,7 @@ begin
 		out_port_v := (others => out_port_zero);
 		sramifin_v := sramif_in_zero;
 		if r.busy then
-			op_v := NOP_op;
+			op_v := NOP_cache_op;
 		end if;
 		v.prev_in := (
 			id => r.id,
@@ -357,7 +195,7 @@ begin
 
 		lh0 := load_hist_entry_zero;
 		case r.prev_in.op is
-		when NOP_op =>
+		when NOP_cache_op =>
 			douta_victim := to_victim_entry_type(douta_decoded, lh_ent.addr(cache_width-1 downto 0));
 			lh_ent := r.load_hist(r.load_hist'length-1);
 			if lh_ent.valid = '1' and lh_ent.obsolete = '0' then
@@ -373,7 +211,7 @@ begin
 					);
 				end if;
 			end if;
-		when READ_op =>
+		when READ_cache_op =>
 			douta_victim := to_victim_entry_type(douta_decoded, r.prev_in.addr(cache_width-1 downto 0));
 			if hit(r.prev_in.addr, douta_decoded) then
 				report "previous read: bram hit" severity note;
@@ -406,7 +244,7 @@ begin
 					port_waiting => port_waiting_v
 				);
 			end if;
-		when WRITE_op =>
+		when WRITE_cache_op =>
 			douta_victim := to_victim_entry_type(douta_decoded, r.prev_in.addr(cache_width-1 downto 0));
 			if hit(r.prev_in.addr, decode(douta)) then
 				report "previous write: bram hit" severity note;
@@ -439,14 +277,14 @@ begin
 			end if;
 		end loop;
 		case op_v is
-		when NOP_op =>
-		when READ_op =>
+		when NOP_cache_op =>
+		when READ_cache_op =>
 			v.used_port(to_integer(unsigned(r.id))) := '1';
 			victim_i := search_victim(v.victim, addr);
 			if load_hist_hit /= -1 then
 				report "read: load history hit" severity note;
 				v.load_hist(load_hist_hit).port_waiting(to_integer(unsigned(r.id))) := '1';
-				v.prev_in.op := NOP_op;
+				v.prev_in.op := NOP_cache_op;
 			elsif victim_i = -1 then
 				report "read: victim miss" severity note;
 				v.victim_read := victim_entry_zero;
@@ -467,7 +305,7 @@ begin
 					din => to_cache_entry_type(v.victim.varray(victim_i))
 				);
 			end if;
-		when WRITE_op =>
+		when WRITE_cache_op =>
 			victim_i := search_victim(v.victim, addr);
 			if load_hist_hit /= -1 then
 				report "write: load history hit" severity note;

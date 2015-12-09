@@ -2,6 +2,7 @@ library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 use work.mem_pack.all;
+use work.cache_pack.all;
 use work.common.all;
 
 entity mem is
@@ -39,27 +40,57 @@ architecture twoproc of mem is
 		'0'
 	);
 	signal r, r_in : reg_type := reg_zero;
-	function rs_executing_update(rs : rs_type;load_in : std_logic_vector(31 downto 0);serial_in : std_logic_vector(7 downto 0)) return rs_type is
+	function rs_executing_update(
+		rs : rs_type;
+		serial_in : std_logic_vector(7 downto 0);
+		out_port : out_port_array_type
+	) return rs_type is
 		variable new_rs : rs_type;
+		variable out_port_entry : out_port_type;
 	begin
 		new_rs := rs;
+		out_port_entry := out_port(to_integer(unsigned(rs.id)));
 		case rs.op is
 			when LOAD_op =>
-				new_rs.common.result := load_in;
+				if out_port_entry.en = '1' then
+					new_rs.common.result := out_port_entry.data;
+					new_rs.common.state := RS_Done;
+					new_rs.common.pc_next := std_logic_vector(unsigned(rs.common.pc) + 1);
+				end if;
 			when IN_op =>
 				new_rs.common.result := x"000000" & serial_in;
+				new_rs.common.state := RS_Done;
+				new_rs.common.pc_next := std_logic_vector(unsigned(rs.common.pc) + 1);
 			when others =>
 		end case;
-		new_rs.common.state := RS_Done;
-		new_rs.common.pc_next := std_logic_vector(unsigned(rs.common.pc) + 1);
 		return new_rs;
 	end rs_executing_update;
 	signal mem_in : in_type;
+	component cache is
+		port(
+			clk, rst : in std_logic;
+			op : in cache_op_type;
+			din : in std_logic_vector(31 downto 0);
+			addr : in std_logic_vector(19 downto 0);
+			sramifout : in sramif_out;
+			sramifin : out sramif_in;
+			id : out std_logic_vector(1 downto 0);
+			out_port : out out_port_array_type;
+			busy : out std_logic
+		);
+	end component;
+	signal cache_op : cache_op_type := NOP_cache_op;
+	signal cache_din : std_logic_vector(31 downto 0) := (others => '0');
+	signal cache_addr : std_logic_vector(19 downto 0) := (others => '0');
+	signal id : id_type;
+	signal out_port : out_port_array_type;
+	signal cache_busy : std_logic;
 begin
 	mem_in.rs_in <= (
 		op => rs_in_op,
 		has_dummy => rs_in_has_dummy,
-		common => rs_in_common
+		common => rs_in_common,
+		id => id_zero
 	);
 	mem_in.cdb_in <= cdb_in;
 	mem_in.cdb_next <= cdb_next;
@@ -70,6 +101,18 @@ begin
 	mem_in.transifout <= transifout;
 	mem_out.cdb_out <= r.cdb_out;
 	mem_out.rs_full <= r.rs_full;
+	cache_l : cache port map(
+		clk => clk,
+		rst => rst,
+		op => cache_op,
+		din => cache_din,
+		addr => cache_addr,
+		sramifout => mem_in.sramifout,
+		sramifin => mem_out.sramifin,
+		id => id,
+		out_port => out_port,
+		busy => cache_busy
+	);
 	process(clk, rst)
 	begin
 		if rst = '1' then
@@ -78,7 +121,7 @@ begin
 			r <= r_in;
 		end if;
 	end process;
-	process(mem_in, r)
+	process(mem_in, r, id, out_port, cache_busy)
 		variable v : reg_type;
 		variable exec_complete : boolean;
 		variable t : rs_common_type;
@@ -86,8 +129,14 @@ begin
 		variable transifin_v : transif_in_type;
 		variable recvifin_v : recvif_in_type;
 		variable exec_i : integer;
+		variable cache_op_v : cache_op_type;
+		variable cache_din_v : std_logic_vector(31 downto 0);
+		variable cache_addr_v : std_logic_vector(19 downto 0);
 	begin
 		v := r;
+		cache_op_v := NOP_cache_op;
+		cache_din_v := (others => '0');
+		cache_addr_v := (others => '0');
 		if mem_in.dummy_done = '1' then
 			v.dummy_done := '1';
 		end if;
@@ -97,7 +146,7 @@ begin
 			v.rs(i).common.rb := register_update(r.rs(i).common.rb, mem_in.cdb_in);
 			if r.rs(i).common.state = RS_Executing then
 				if v.countdown(i) = "000" then
-					v.rs(i) := rs_executing_update(r.rs(i), mem_in.sramifout.rd, mem_in.recvifout.dout);
+					v.rs(i) := rs_executing_update(r.rs(i), mem_in.recvifout.dout, out_port);
 				else
 					v.countdown(i) := std_logic_vector(unsigned(v.countdown(i)) - 1);
 				end if;
@@ -118,21 +167,25 @@ begin
 			if exec_complete then
 				case r.rs(exec_i).op is
 				when LOAD_op =>
-					v.rs(exec_i).common.state := RS_Executing;
-					v.countdown(exec_i) := "011";
-					sramifin_v := (
-						op => SRAM_LOAD,
-						addr => t.ra.data(19 downto 0),
-						wd => (others => '0')
-					);
+					if cache_busy = '0' then
+						v.rs(exec_i).common.state := RS_Executing;
+						v.rs(exec_i).id := id;
+						v.countdown(exec_i) := "000";
+						cache_op_v := READ_cache_op;
+						cache_addr_v := t.ra.data(19 downto 0);
+					else
+						exec_complete := false;
+					end if;
 				when STORE_op =>
-					v.rs(exec_i).common.state := RS_Done;
-					v.rs(exec_i).common.pc_next := std_logic_vector(unsigned(t.pc) + 1);
-					sramifin_v := (
-						op => SRAM_STORE,
-						addr => t.rb.data(19 downto 0),
-						wd => t.ra.data
-					);
+					if cache_busy = '0' then
+						v.rs(exec_i).common.state := RS_Done;
+						v.rs(exec_i).common.pc_next := std_logic_vector(unsigned(t.pc) + 1);
+						cache_op_v := WRITE_cache_op;
+						cache_addr_v := t.rb.data(19 downto 0);
+						cache_din_v := t.ra.data;
+					else
+						exec_complete := false;
+					end if;
 				when IN_op =>
 					if mem_in.recvifout.empty = '0' then
 						v.rs(exec_i).common.state := RS_Executing;
@@ -160,7 +213,10 @@ begin
 				v.dummy_done := '0';
 			end if;
 		end if;
-		mem_out.sramifin <= sramifin_v;
+		cache_op <= cache_op_v;
+		cache_din <= cache_din_v;
+		cache_addr <= cache_addr_v;
+--		mem_out.sramifin <= sramifin_v;
 		mem_out.recvifin <= recvifin_v;
 		mem_out.transifin <= transifin_v;
 		-- store new rs contents
