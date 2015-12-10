@@ -125,7 +125,7 @@ begin
 		variable v : reg_type;
 		variable exec_complete : boolean;
 		variable t : rs_common_type;
-		variable sramifin_v : sramif_in;
+--		variable sramifin_v : sramif_in;
 		variable transifin_v : transif_in_type;
 		variable recvifin_v : recvif_in_type;
 		variable exec_i : integer;
@@ -153,7 +153,7 @@ begin
 			end if;
 		end loop;
 		exec_complete := false;
-		sramifin_v := sramif_in_zero;
+--		sramifin_v := sramif_in_zero;
 		recvifin_v := recvif_in_zero;
 		transifin_v := transif_in_zero;
 		exec_i := to_integer(unsigned(r.rs_exec));

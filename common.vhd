@@ -262,6 +262,8 @@ use ieee.numeric_std.all;
 package cache_pack is
 	type cache_op_type is (READ_cache_op, WRITE_cache_op, NOP_cache_op);
 	constant cache_width : integer := 10;
+	constant tag_width : integer := 20 - cache_width;
+	constant cache_entry_width : integer := tag_width + 32 + 2;
 	constant port_width : integer := 2;
 	subtype id_type is std_logic_vector(port_width-1 downto 0);
 	constant id_zero : id_type := (others => '0');

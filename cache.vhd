@@ -66,38 +66,40 @@ architecture twoproc of cache is
 COMPONENT bram IS
   PORT (
     clka : IN STD_LOGIC;
+    ena : IN STD_LOGIC;
     wea : IN STD_LOGIC_VECTOR(0 DOWNTO 0);
     addra : IN STD_LOGIC_VECTOR(9 DOWNTO 0);
     dina : IN STD_LOGIC_VECTOR(43 DOWNTO 0);
     douta : OUT STD_LOGIC_VECTOR(43 DOWNTO 0);
     clkb : IN STD_LOGIC;
+    enb : IN STD_LOGIC;
     web : IN STD_LOGIC_VECTOR(0 DOWNTO 0);
     addrb : IN STD_LOGIC_VECTOR(9 DOWNTO 0);
     dinb : IN STD_LOGIC_VECTOR(43 DOWNTO 0);
     doutb : OUT STD_LOGIC_VECTOR(43 DOWNTO 0)
   );
 END COMPONENT;
-	signal douta, doutb : std_logic_vector(43 downto 0);
+	signal douta, doutb : std_logic_vector(cache_entry_width-1 downto 0);
 	function encode(e : cache_entry_type) return std_logic_vector is
 	begin
 		return e.valid & e.modified & e.tag & e.data;
 	end encode;
-	function decode(d : std_logic_vector(43 downto 0)) return cache_entry_type is
+	function decode(d : std_logic_vector(cache_entry_width-1 downto 0)) return cache_entry_type is
 	begin
 		return (
-			valid => d(43),
-			modified => d(42),
-			tag => d(41 downto 32),
+			valid => d(33+tag_width),
+			modified => d(32+tag_width),
+			tag => d(31+tag_width downto 32),
 			data => d(31 downto 0)
 		);
 	end decode;
 	type bram_in_type is record
-		we : std_logic;
+		we, en : std_logic;
 		addr : std_logic_vector(cache_width-1 downto 0);
 		din : cache_entry_type;
 	end record;
 	constant bram_in_zero : bram_in_type := (
-		'0',
+		'0', '0',
 		(others => '0'),
 		cache_entry_zero
 	);
@@ -112,6 +114,8 @@ begin
 	PORT map (
 		clka => clk,
 		clkb => clk,
+		ena => ina.en,
+		enb => inb.en,
 		wea => ina_we,
 		web => inb_we,
 		addra => ina.addr,
@@ -173,6 +177,7 @@ begin
 				report "write to bram" severity note;
 				ina_v := (
 					we => '1',
+					en => '1',
 					addr => lh_ent.addr(cache_width-1 downto 0),
 					din => (
 						valid => '1',
@@ -191,13 +196,14 @@ begin
 					);
 				end if;
 			end loop;
+--			v.busy := false;
 		end if;
 
 		lh0 := load_hist_entry_zero;
 		case r.prev_in.op is
 		when NOP_cache_op =>
-			douta_victim := to_victim_entry_type(douta_decoded, lh_ent.addr(cache_width-1 downto 0));
 			lh_ent := r.load_hist(r.load_hist'length-1);
+			douta_victim := to_victim_entry_type(douta_decoded, lh_ent.addr(cache_width-1 downto 0));
 			if lh_ent.valid = '1' and lh_ent.obsolete = '0' then
 				report "write to victim" severity note;
 				victim_oldest_i := oldest_victim(r.victim.log);
@@ -236,6 +242,7 @@ begin
 					addr => r.prev_in.addr,
 					wd => (others => '0')
 				);
+--				v.busy := true;
 				port_waiting_v := (others => '0');
 				port_waiting_v(to_integer(unsigned(r.prev_in.id))) := '1';
 				lh0 := (
@@ -279,6 +286,8 @@ begin
 		end loop;
 		case op_v is
 		when NOP_cache_op =>
+			v.victim_read := victim_entry_zero;
+			v.victim_read_num := (others => '0');
 		when READ_cache_op =>
 			v.used_port(to_integer(unsigned(r.id))) := '1';
 			victim_i := search_victim(v.victim, addr);
@@ -292,6 +301,7 @@ begin
 				v.victim_read_num := (others => '0');
 				ina_v := (
 					we => '0',
+					en => '1',
 					addr => addr(cache_width-1 downto 0),
 					din => cache_entry_zero
 				);
@@ -302,6 +312,7 @@ begin
 				v.victim_read_num := std_logic_vector(to_unsigned(victim_i, victim_width));
 				ina_v := (
 					we => '1',
+					en => '1',
 					addr => addr(cache_width-1 downto 0),
 					din => to_cache_entry_type(v.victim.varray(victim_i))
 				);
@@ -323,6 +334,7 @@ begin
 			end if;
 			ina_v := (
 				we => '1',
+				en => '1',
 				addr => addr(cache_width-1 downto 0),
 				din => (
 					valid => '1',
@@ -344,7 +356,6 @@ begin
 			end if;
 		end loop;
 		r_in <= v;
-		inb_v.addr := (others => '1');
 		ina <= ina_v;
 		inb <= inb_v;
 		sramifin <= sramifin_v;
