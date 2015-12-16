@@ -234,7 +234,7 @@ begin
 			v.cdb_out := cdb_zero;
 			if v.rs(to_integer(unsigned(v.rs_oldest))).common.state = RS_Done then
 				t := v.rs(to_integer(unsigned(v.rs_oldest))).common;
-				v.cdb_out := make_cdb_out(t);
+				v.cdb_out := make_cdb_out(t, false);
 			end if;
 		end if;
 		if std_logic_vector(unsigned(v.rs_youngest)+1) = v.rs_oldest then

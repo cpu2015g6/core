@@ -147,7 +147,7 @@ begin
 		variable victim_i : integer;
 		variable sramifin_v : sramif_in;
 		variable port_waiting_v : std_logic_vector(victim_size-1 downto 0);
-		alias oldest_load_hist : load_hist_entry_type is r.load_hist(r.load_hist'length-1);
+--		alias oldest_load_hist : load_hist_entry_type is r.load_hist(r.load_hist'length-1);
 	begin
 		ina_v := bram_in_zero;
 		inb_v := bram_in_zero;

@@ -122,6 +122,7 @@ library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 use work.common.all;
+use work.gshare_pack.all;
 use work.all;
 
 entity cpu_top is
@@ -174,6 +175,7 @@ architecture twoproc of cpu_top is
 		registers : register_array_type;
 		pc : pc_type;
 		rob : rob_ring_buffer_type;
+		gshare : gshare_type;
 		state : CPU_state_type;
 		inst_valid, state_sub : std_logic;
 	end record;
@@ -183,6 +185,7 @@ architecture twoproc of cpu_top is
 		register_array_zero,
 		(others => '0'),
 		rob_ring_buffer_zero,
+		gshare_zero,
 		CPU_LOADING,
 		'0', '0'
 	);
@@ -245,16 +248,74 @@ architecture twoproc of cpu_top is
 	signal sramifin_pl : sramif_in;
 	signal go_pl, active_pl : std_logic := '0';
 	-- determines the next pc
+	procedure branch_predictor_cond_branch(
+		taken : in boolean;
+		btb_entry : in btb_entry_type;
+		pc : in pc_type;
+		g_in : in gshare_type;
+		next_pc : out pc_type;
+		g_out : out gshare_type;
+		stall : out boolean) is
+	variable g : gshare_type;
+	begin
+		g := g_in;
+		g := ghr_push(g, taken);
+		if taken then
+			if btb_entry.valid then
+				next_pc := btb_entry.target;
+				stall := false;
+			else
+				next_pc := pc;
+				stall := true;
+			end if;
+		else
+			next_pc := std_logic_vector(unsigned(pc) + 1);
+			stall := false;
+		end if;
+		g_out := g;
+	end;
 	procedure branch_predictor(
 		decode_result : in decode_result_type;
 		pc : in pc_type;
-		next_pc : out pc_type) is
+		g_in : in gshare_type;
+		next_pc : out pc_type;
+		g_out : out gshare_type;
+		stall : out boolean) is
+	variable taken : boolean;
+	variable btb_entry : btb_entry_type;
 	begin
+		taken := predict(g_in, pc);
+		btb_entry := btb_lookup(g_in, pc);
 		case decode_result.opc is
 		when J_opc =>
 			next_pc := std_logic_vector(signed(pc) + signed(decode_result.imm(pc_width-1 downto 0)));
+			stall := false;
+			g_out := g_in;
+		when JR_opc =>
+			if btb_entry.valid then
+				next_pc := btb_entry.target;
+				stall := false;
+			else
+				next_pc := pc;
+				stall := true;
+			end if;
+			g_out := g_in;
+		when JREQ_opc =>
+			branch_predictor_cond_branch(taken, btb_entry, pc, g_in, next_pc, g_out, stall);
+		when JRNEQ_opc =>
+			branch_predictor_cond_branch(taken, btb_entry, pc, g_in, next_pc, g_out, stall);
+		when JRGT_opc =>
+			branch_predictor_cond_branch(taken, btb_entry, pc, g_in, next_pc, g_out, stall);
+		when JRGTE_opc =>
+			branch_predictor_cond_branch(taken, btb_entry, pc, g_in, next_pc, g_out, stall);
+		when JRLT_opc =>
+			branch_predictor_cond_branch(taken, btb_entry, pc, g_in, next_pc, g_out, stall);
+		when JRLTE_opc =>
+			branch_predictor_cond_branch(taken, btb_entry, pc, g_in, next_pc, g_out, stall);
 		when others =>
 			next_pc := std_logic_vector(unsigned(pc) + 1);
+			stall := false;
+			g_out := g_in;
 		end case;
 	end branch_predictor;
 	procedure inst_decode(
@@ -460,6 +521,7 @@ architecture twoproc of cpu_top is
 			if rob_array(rob_i).reg_num /= reg_num_zero then
 				new_rob_array(rob_i).result := cdb.data;
 			end if;
+			new_rob_array(rob_i).taken := cdb.taken;
 			new_rob_array(rob_i).state := ROB_Done;
 			if cdb.pc_next /= rob_array(rob_i).pc_next then
 				new_rob_array(rob_i).state := ROB_RESET;
@@ -468,6 +530,29 @@ architecture twoproc of cpu_top is
 		end if;
 		return new_rob_array;
 	end update_ROB;
+	function commit_branch_predictor(rob_entry : rob_type;g : gshare_type) return gshare_type is
+		variable v : gshare_type;
+	begin
+		v := g;
+		case rob_entry.opc is
+		when JR_opc =>
+			v := btb_register(g, rob_entry.pc, rob_entry.pc_next);
+		when JREQ_opc =>
+			v := gshare_commit(g, rob_entry.taken, rob_entry.pc, rob_entry.pc_next);
+		when JRNEQ_opc =>
+			v := gshare_commit(g, rob_entry.taken, rob_entry.pc, rob_entry.pc_next);
+		when JRGT_opc =>
+			v := gshare_commit(g, rob_entry.taken, rob_entry.pc, rob_entry.pc_next);
+		when JRGTE_opc =>
+			v := gshare_commit(g, rob_entry.taken, rob_entry.pc, rob_entry.pc_next);
+		when JRLT_opc =>
+			v := gshare_commit(g, rob_entry.taken, rob_entry.pc, rob_entry.pc_next);
+		when JRLTE_opc =>
+			v := gshare_commit(g, rob_entry.taken, rob_entry.pc, rob_entry.pc_next);
+		when others =>
+		end case;
+		return v;
+	end;
 begin
 	bram_addr_cpu <= r_in.pc;
 	bram_addr <= bram_addr_pl when r.state = CPU_LOADING else bram_addr_cpu;
@@ -567,7 +652,10 @@ begin
 			branch_predictor(
 				decode_result => decode_result_v,
 				pc => r.pc,
-				next_pc => next_pc
+				next_pc => next_pc,
+				g_in => r.gshare,
+				g_out => v.gshare,
+				stall => stall
 			);
 			if decode_result_v.need_dummy_rob_entry = '1' then
 				next_pc := r.pc;
@@ -771,7 +859,7 @@ begin
 				mem_rs_v := mem_pack.rs_zero;
 				branch_rs_v := branch_pack.rs_zero;
 			end if;
-			stall := rob_full(r.rob);
+			stall := stall or rob_full(r.rob);
 			assert not stall report "rob full" severity note;
 			case unit is
 				when ALU_UNIT =>
@@ -799,6 +887,9 @@ begin
 					if r.decode_result.need_dummy_rob_entry = '1' then
 						v.rob.rob_array(to_integer(unsigned(r.rob.youngest))) := (
 							state => ROB_Dummy,
+							taken => false,
+							opc => NOP_opc,
+							pc => r.decode_result.pc,
 							pc_next => r.decode_result.pc_predicted,
 							result => (others => '0'),
 							reg_num => reg_num_zero
@@ -806,6 +897,9 @@ begin
 					else
 						v.rob.rob_array(to_integer(unsigned(r.rob.youngest))) := (
 							state => ROB_Executing,
+							taken => false,
+							opc => r.decode_result.opc,
+							pc => r.decode_result.pc,
 							pc_next => r.decode_result.pc_predicted,
 							result => (others => '0'),
 							reg_num => r.decode_result.rt
@@ -848,12 +942,14 @@ begin
 				end if;
 				v.rob.rob_array(to_integer(unsigned(v.rob.oldest))) := rob_zero;
 				v.rob.oldest := std_logic_vector(unsigned(v.rob.oldest) + 1);
+				v.gshare := commit_branch_predictor(oldest_rob, v.gshare);
 			elsif oldest_rob.state = ROB_Reset then
 				report "rob reset" severity note;
 				if oldest_rob.reg_num /= reg_num_zero then
 					assert v.registers(to_integer(unsigned(oldest_rob.reg_num))).tag.valid = '1' report "BUG @ register write reservation";
 					v.registers(to_integer(unsigned(oldest_rob.reg_num))).data := oldest_rob.result;
 				end if;
+				v.gshare := commit_branch_predictor(oldest_rob, v.gshare);
 				for i in v.registers'range loop
 					v.registers(i).tag := rs_tag_zero;
 				end loop;
@@ -863,6 +959,7 @@ begin
 					registers => v.registers,
 					pc => oldest_rob.pc_next,
 					rob => rob_ring_buffer_zero,
+					gshare => gshare_reset(v.gshare),
 					state => CPU_NORMAL,
 					inst_valid => '0',
 					state_sub => '0'

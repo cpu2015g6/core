@@ -53,11 +53,13 @@ package common is
 		data : std_logic_vector(31 downto 0);
 		tag : rs_tag_type;
 		pc_next : pc_type;
+		taken : boolean;
 	end record;
 	constant cdb_zero : cdb_type := (
 		(others => '0'),
 		rs_tag_zero,
-		(others => '0')
+		(others => '0'),
+		false
 	);
 	type rs_state_type is (RS_Invalid, RS_Waiting, RS_Executing, RS_Done, RS_Reserved);
 	type rs_common_type is record
@@ -82,13 +84,17 @@ package common is
 	type rob_state_type is (ROB_Invalid, ROB_Executing, ROB_Done, ROB_Reset, ROB_Dummy);
 	type rob_type is record
 		state : rob_state_type;
-		pc_next : pc_type;
+		taken : boolean;
+		opc : opc_type;
+		pc, pc_next : pc_type;
 		result : std_logic_vector(31 downto 0);
 		reg_num : reg_num_type;
 	end record;
 	constant rob_zero : rob_type := (
 		ROB_Invalid,
-		(others => '0'),
+		false,
+		NOP_opc,
+		(others => '0'), (others => '0'),
 		(others => '0'),
 		(others => '0')
 	);
@@ -151,7 +157,7 @@ package common is
 		transifin : transif_in_type;
 	end record;
 	function register_update(reg : register_type; cdb : cdb_type) return register_type;
-	function make_cdb_out(rs_common : rs_common_type) return cdb_type;
+	function make_cdb_out(rs_common : rs_common_type;taken : boolean) return cdb_type;
 end common;
 
 package body common is
@@ -169,7 +175,7 @@ package body common is
 		end if;
 		return v;
 	end register_update;
-	function make_cdb_out(rs_common : rs_common_type) return cdb_type is
+	function make_cdb_out(rs_common : rs_common_type;taken : boolean) return cdb_type is
 	begin
 		return (
 			tag => (
@@ -177,7 +183,8 @@ package body common is
 				rob_num => rs_common.rob_num
 			),
 			data => rs_common.result,
-			pc_next => rs_common.pc_next
+			pc_next => rs_common.pc_next,
+			taken => taken
 		);
 	end make_cdb_out;
 end common;
@@ -488,10 +495,12 @@ package branch_pack is
 	type op_type is (J_op, JR_op, JREQ_op, JRNEQ_op, JRGT_op, JRGTE_op, JRLT_op, JRLTE_op, NOP_op);
 	type rs_type is record
 		op : op_type;
+		taken : boolean;
 		common : rs_common_type;
 	end record;
 	constant rs_zero : rs_type := (
 		NOP_op,
+		false,
 		rs_common_zero
 	);
 	type rs_array_type is array (0 to 2**rs_num_width-1) of rs_type;

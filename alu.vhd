@@ -118,7 +118,7 @@ begin
 			v.cdb_out := cdb_zero;
 			for i in v.rs'range loop
 				if v.rs(i).common.state = RS_Done then
-					v.cdb_out := make_cdb_out(v.rs(i).common);
+					v.cdb_out := make_cdb_out(v.rs(i).common, false);
 					v.cdb_rs_num := std_logic_vector(to_unsigned(i, rs_num_width));
 				end if;
 			end loop;

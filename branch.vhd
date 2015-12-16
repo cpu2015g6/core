@@ -59,50 +59,64 @@ begin
 				case v.rs(i).op is
 					when J_op =>
 						v.rs(i).common.pc_next := std_logic_vector(signed(v.rs(i).common.pc) + signed(v.rs(i).common.ra.data(pc_width-1 downto 0)));
+						v.rs(i).taken := false;
 						v.rs(i).common.result := pc32;
 					when JR_op =>
 						v.rs(i).common.pc_next := v.rs(i).common.ra.data(pc_width-1 downto 0);
+						v.rs(i).taken := false;
 						v.rs(i).common.result := pc32;
 					when JREQ_op =>
 						if v.rs(i).common.ra.data = eq_const then
 							v.rs(i).common.pc_next := v.rs(i).common.rb.data(pc_width-1 downto 0);
+							v.rs(i).taken := true;
 						else
 							v.rs(i).common.pc_next := std_logic_vector(unsigned(v.rs(i).common.pc) + 1);
+							v.rs(i).taken := false;
 						end if;
 						v.rs(i).common.result := pc32;
 					when JRNEQ_op =>
 						if v.rs(i).common.ra.data /= eq_const then
 							v.rs(i).common.pc_next := v.rs(i).common.rb.data(pc_width-1 downto 0);
+							v.rs(i).taken := true;
 						else
 							v.rs(i).common.pc_next := std_logic_vector(unsigned(v.rs(i).common.pc) + 1);
+							v.rs(i).taken := false;
 						end if;
 						v.rs(i).common.result := pc32;
 					when JRGT_op =>
 						if v.rs(i).common.ra.data = gt_const then
 							v.rs(i).common.pc_next := v.rs(i).common.rb.data(pc_width-1 downto 0);
+							v.rs(i).taken := true;
 						else
 							v.rs(i).common.pc_next := std_logic_vector(unsigned(v.rs(i).common.pc) + 1);
+							v.rs(i).taken := false;
 						end if;
 						v.rs(i).common.result := pc32;
 					when JRGTE_op =>
 						if v.rs(i).common.ra.data /= lt_const then
 							v.rs(i).common.pc_next := v.rs(i).common.rb.data(pc_width-1 downto 0);
+							v.rs(i).taken := true;
 						else
 							v.rs(i).common.pc_next := std_logic_vector(unsigned(v.rs(i).common.pc) + 1);
+							v.rs(i).taken := false;
 						end if;
 						v.rs(i).common.result := pc32;
 					when JRLT_op =>
 						if v.rs(i).common.ra.data = lt_const then
 							v.rs(i).common.pc_next := v.rs(i).common.rb.data(pc_width-1 downto 0);
+							v.rs(i).taken := true;
 						else
 							v.rs(i).common.pc_next := std_logic_vector(unsigned(v.rs(i).common.pc) + 1);
+							v.rs(i).taken := false;
 						end if;
 						v.rs(i).common.result := pc32;
 					when JRLTE_op =>
 						if v.rs(i).common.ra.data /= gt_const then
 							v.rs(i).common.pc_next := v.rs(i).common.rb.data(pc_width-1 downto 0);
+							v.rs(i).taken := true;
 						else
 							v.rs(i).common.pc_next := std_logic_vector(unsigned(v.rs(i).common.pc) + 1);
+							v.rs(i).taken := false;
 						end if;
 						v.rs(i).common.result := pc32;
 					when NOP_op =>
@@ -126,7 +140,7 @@ begin
 			v.cdb_out := cdb_zero;
 			for i in v.rs'range loop
 				if v.rs(i).common.state = RS_Done then
-					v.cdb_out := make_cdb_out(v.rs(i).common);
+					v.cdb_out := make_cdb_out(v.rs(i).common, v.rs(i).taken);
 					v.cdb_rs_num := std_logic_vector(to_unsigned(i, rs_num_width));
 				end if;
 			end loop;
