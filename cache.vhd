@@ -63,6 +63,11 @@ architecture twoproc of cache is
 			douta, doutb : out cache_entry_type
 		);
 	end component;
+-- true dual port ram
+-- read_first
+-- initialized by 0
+-- width: cache_entry_type (1+1+(20-cache_width)+32)
+-- depth: 2^cache_width
 COMPONENT bram IS
   PORT (
     clka : IN STD_LOGIC;

@@ -1,6 +1,10 @@
 library ieee;
 use ieee.std_logic_1164.all;
 package common is
+	constant pht_array_width : integer := 10;
+	subtype ghr_type is std_logic_vector(pht_array_width-1 downto 0);
+	subtype pht_entry_type is std_logic_vector(1 downto 0);
+	constant pht_entry_zero : pht_entry_type := "00";
 	constant rs_num_width : integer := 2;
 	subtype rs_num_type is std_logic_vector(rs_num_width-1 downto 0);
 	constant pc_width : integer := 15;
@@ -15,6 +19,7 @@ package common is
 	constant gt_const : std_logic_vector(31 downto 0) := x"00000002";
 	constant eq_const : std_logic_vector(31 downto 0) := x"00000001";
 	constant lt_const : std_logic_vector(31 downto 0) := x"00000000";
+	subtype gshare_entry_type is std_logic_vector(pc_width+2-1 downto 0);
 	-- reservation station
 	type rs_tag_type is record
 		valid : std_logic;
@@ -29,6 +34,9 @@ package common is
 		rt, ra, rb : reg_num_type;
 		imm : std_logic_vector(15 downto 0);
 		pc, pc_predicted : pc_type;
+		ghr : ghr_type;
+		pht_entry : pht_entry_type;
+		branch_target : pc_type;
 		need_dummy_rob_entry : std_logic;
 	end record;
 	constant decode_result_zero : decode_result_type := (
@@ -36,6 +44,9 @@ package common is
 		reg_num_zero, reg_num_zero, reg_num_zero,
 		(others => '0'),
 		(others => '0'), (others => '0'),
+		(others => '0'),
+		pht_entry_zero,
+		(others => '0'),
 		'0'
 	);
 	type register_type is record
@@ -87,6 +98,9 @@ package common is
 		taken : boolean;
 		opc : opc_type;
 		pc, pc_next : pc_type;
+		ghr : ghr_type;
+		pht_entry : pht_entry_type;
+		branch_target : pc_type;
 		result : std_logic_vector(31 downto 0);
 		reg_num : reg_num_type;
 	end record;
@@ -95,6 +109,9 @@ package common is
 		false,
 		NOP_opc,
 		(others => '0'), (others => '0'),
+		(others => '0'),
+		pht_entry_zero,
+		(others => '0'),
 		(others => '0'),
 		(others => '0')
 	);

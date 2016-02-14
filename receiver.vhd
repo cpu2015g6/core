@@ -78,6 +78,9 @@ component receiver is
 		rx : in std_logic
 	);
 end component;
+-- FIFO
+-- Standard FIFO
+-- width: 8
   component fifo8
     port (
       clk   : in  std_logic;

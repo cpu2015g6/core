@@ -66,6 +66,9 @@ entity transif is
 end entity;
 
 architecture beh of transif is
+-- FIFO
+-- Standard FIFO
+-- width: 8
   component fifo8
     port (
       clk   : in  std_logic;

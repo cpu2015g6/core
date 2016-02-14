@@ -174,8 +174,8 @@ architecture twoproc of cpu_top is
 		cdb : cdb_type;
 		registers : register_array_type;
 		pc : pc_type;
+		ghr : ghr_type;
 		rob : rob_ring_buffer_type;
-		gshare : gshare_type;
 		state : CPU_state_type;
 		inst_valid, state_sub : std_logic;
 	end record;
@@ -184,8 +184,8 @@ architecture twoproc of cpu_top is
 		cdb_zero,
 		register_array_zero,
 		(others => '0'),
+		(others => '0'),
 		rob_ring_buffer_zero,
-		gshare_zero,
 		CPU_LOADING,
 		'0', '0'
 	);
@@ -248,74 +248,76 @@ architecture twoproc of cpu_top is
 	signal sramifin_pl : sramif_in;
 	signal go_pl, active_pl : std_logic := '0';
 	-- determines the next pc
-	procedure branch_predictor_cond_branch(
-		taken : in boolean;
-		btb_entry : in btb_entry_type;
-		pc : in pc_type;
-		g_in : in gshare_type;
-		next_pc : out pc_type;
-		g_out : out gshare_type;
-		stall : out boolean) is
-	variable g : gshare_type;
-	begin
-		g := g_in;
-		g := ghr_push(g, taken);
-		if taken then
-			if btb_entry.valid then
-				next_pc := btb_entry.target;
-				stall := false;
-			else
-				next_pc := pc;
-				stall := true;
-			end if;
-		else
-			next_pc := std_logic_vector(unsigned(pc) + 1);
-			stall := false;
-		end if;
-		g_out := g;
-	end;
+--	procedure branch_predictor_cond_branch(
+--		taken : in boolean;
+--		btb_entry : in btb_entry_type;
+--		pc : in pc_type;
+--		g_in : in gshare_type;
+--		next_pc : out pc_type;
+--		g_out : out gshare_type;
+--		stall : out boolean) is
+--	variable g : gshare_type;
+--	begin
+--		g := g_in;
+--		g := ghr_push(g, taken);
+--		if taken then
+--			if btb_entry.valid then
+--				next_pc := btb_entry.target;
+--				stall := false;
+--			else
+--				next_pc := pc;
+--				stall := true;
+--			end if;
+--		else
+--			next_pc := std_logic_vector(unsigned(pc) + 1);
+--			stall := false;
+--		end if;
+--		g_out := g;
+--	end;
 	procedure branch_predictor(
 		decode_result : in decode_result_type;
+		pht_entry : in pht_entry_type;
+		branch_target : in pc_type;
 		pc : in pc_type;
-		g_in : in gshare_type;
+		ghr : in ghr_type;
 		next_pc : out pc_type;
-		g_out : out gshare_type;
+		next_ghr : out ghr_type;
 		stall : out boolean) is
 	variable taken : boolean;
-	variable btb_entry : btb_entry_type;
 	begin
-		taken := predict(g_in, pc);
-		btb_entry := btb_lookup(g_in, pc);
+		taken := pht_taken(pht_entry);
+		next_ghr := ghr_next(ghr, taken);
+		if taken then
+			next_pc := branch_target;
+		else
+			next_pc := std_logic_vector(signed(pc) + 1);
+		end if;
+		stall := false;
+--		taken := predict(g_in, pc);
+----		btb_entry := btb_lookup(g_in, pc);
+--		btb_entry := btb_decode(btb_dout);
+--		if btb_entry.tag /= pc(pc_width-1 downto pht_array_width) then
+--			btb_entry := btb_entry_zero;
+--		end if;
 		case decode_result.opc is
 		when J_opc =>
 			next_pc := std_logic_vector(signed(pc) + signed(decode_result.imm(pc_width-1 downto 0)));
-			stall := false;
-			g_out := g_in;
+			next_ghr := ghr;
 		when JR_opc =>
-			if btb_entry.valid then
-				next_pc := btb_entry.target;
-				stall := false;
-			else
-				next_pc := pc;
+			if pht_entry /= "11" then
 				stall := true;
+				next_pc := pc;
 			end if;
-			g_out := g_in;
+			next_ghr := ghr;
 		when JREQ_opc =>
-			branch_predictor_cond_branch(taken, btb_entry, pc, g_in, next_pc, g_out, stall);
 		when JRNEQ_opc =>
-			branch_predictor_cond_branch(taken, btb_entry, pc, g_in, next_pc, g_out, stall);
 		when JRGT_opc =>
-			branch_predictor_cond_branch(taken, btb_entry, pc, g_in, next_pc, g_out, stall);
 		when JRGTE_opc =>
-			branch_predictor_cond_branch(taken, btb_entry, pc, g_in, next_pc, g_out, stall);
 		when JRLT_opc =>
-			branch_predictor_cond_branch(taken, btb_entry, pc, g_in, next_pc, g_out, stall);
 		when JRLTE_opc =>
-			branch_predictor_cond_branch(taken, btb_entry, pc, g_in, next_pc, g_out, stall);
 		when others =>
 			next_pc := std_logic_vector(unsigned(pc) + 1);
-			stall := false;
-			g_out := g_in;
+			next_ghr := ghr;
 		end case;
 	end branch_predictor;
 	procedure inst_decode(
@@ -530,31 +532,59 @@ architecture twoproc of cpu_top is
 		end if;
 		return new_rob_array;
 	end update_ROB;
-	function commit_branch_predictor(rob_entry : rob_type;g : gshare_type) return gshare_type is
-		variable v : gshare_type;
+	procedure commit_branch_predictor(rob_entry : in rob_type; btb_we : out std_logic; btb_addr : out std_logic_vector(pht_array_width-1 downto 0); btb_din : out gshare_entry_type) is
+		variable next_target : pc_type;
 	begin
-		v := g;
+		btb_we := '0';
+		btb_addr := (others => '0');
+		btb_din := (others => '0');
+		if rob_entry.taken then
+			next_target := rob_entry.pc_next;
+		else
+			next_target := rob_entry.branch_target;
+		end if;
 		case rob_entry.opc is
 		when JR_opc =>
-			v := btb_register(g, rob_entry.pc, rob_entry.pc_next);
+			gshare_entry_encode(rob_entry.pc_next, "11", btb_din);
 		when JREQ_opc =>
-			v := gshare_commit(g, rob_entry.taken, rob_entry.pc, rob_entry.pc_next);
+			btb_din := gshare_commit(rob_entry.taken, rob_entry.pht_entry, next_target);
 		when JRNEQ_opc =>
-			v := gshare_commit(g, rob_entry.taken, rob_entry.pc, rob_entry.pc_next);
+			btb_din := gshare_commit(rob_entry.taken, rob_entry.pht_entry, next_target);
 		when JRGT_opc =>
-			v := gshare_commit(g, rob_entry.taken, rob_entry.pc, rob_entry.pc_next);
+			btb_din := gshare_commit(rob_entry.taken, rob_entry.pht_entry, next_target);
 		when JRGTE_opc =>
-			v := gshare_commit(g, rob_entry.taken, rob_entry.pc, rob_entry.pc_next);
+			btb_din := gshare_commit(rob_entry.taken, rob_entry.pht_entry, next_target);
 		when JRLT_opc =>
-			v := gshare_commit(g, rob_entry.taken, rob_entry.pc, rob_entry.pc_next);
+			btb_din := gshare_commit(rob_entry.taken, rob_entry.pht_entry, next_target);
 		when JRLTE_opc =>
-			v := gshare_commit(g, rob_entry.taken, rob_entry.pc, rob_entry.pc_next);
+			btb_din := gshare_commit(rob_entry.taken, rob_entry.pht_entry, next_target);
 		when others =>
 		end case;
-		return v;
 	end;
+
+-- simple dual port ram
+-- read_first
+-- initialized by 0
+-- width: (2+pc_width)
+-- depth: 2^pht_array_width
+component btb_ram IS
+  PORT (
+    clka : IN STD_LOGIC;
+    wea : IN STD_LOGIC_VECTOR(0 DOWNTO 0);
+    addra : IN STD_LOGIC_VECTOR(9 DOWNTO 0);
+    dina : IN STD_LOGIC_VECTOR(16 DOWNTO 0);
+    clkb : IN STD_LOGIC;
+    addrb : IN STD_LOGIC_VECTOR(9 DOWNTO 0);
+    doutb : OUT STD_LOGIC_VECTOR(16 DOWNTO 0)
+  );
+END component;
+	signal btb_wea : std_logic_vector(0 downto 0) := "0";
+	signal btb_addra, btb_addrb : std_logic_vector(9 downto 0) := (others => '0');
+	signal btb_din : gshare_entry_type := (others => '0');
+	signal btb_dout : gshare_entry_type;
 begin
 	bram_addr_cpu <= r_in.pc;
+	btb_addrb <= r_in.pc(r_in.ghr'length-1 downto 0) xor r_in.ghr;
 	bram_addr <= bram_addr_pl when r.state = CPU_LOADING else bram_addr_cpu;
 	cpu_top_out.sramifin <= sramifin_pl when r.state = CPU_LOADING else mem_out.sramifin;
 	cpu_top_out.recvifin <= recvifin_pl when r.state = CPU_LOADING else mem_out.recvifin;
@@ -596,6 +626,16 @@ begin
 		recvifin => recvifin_pl,
 		sramifin => sramifin_pl
 	);
+	btb_ram_l : btb_ram
+	PORT map (
+		clka => clk,
+		clkb => clk,
+		wea => btb_wea,
+		addra => btb_addra,
+		dina => btb_din,
+		addrb => btb_addrb,
+		doutb => btb_dout
+	);
 	process(clk, rst)
 	begin
 		if rst = '1' then
@@ -625,12 +665,20 @@ begin
 		variable zext_imm : std_logic_vector(31 downto 0);
 		variable insert_dummy_rob_entry : boolean;
 		variable go_pl_v : std_logic;
+		variable btb_we : std_logic;
+		variable btb_addr_write : std_logic_vector(pht_array_width-1 downto 0);
+		variable btb_din_v : gshare_entry_type;
+		variable pht_entry : pht_entry_type;
+		variable branch_target : pc_type;
 	begin
 		v := r;
 		alu_in_v := alu_pack.in_zero;
 		fpu_in_v := fpu_pack.in_zero;
 		mem_in_v := mem_pack.in_zero;
 		branch_in_v := branch_pack.in_zero;
+		btb_we := '0';
+		btb_addr_write := (others => '0');
+		gshare_entry_decode(btb_dout, branch_target, pht_entry);
 		go_pl_v := '0';
 		case r.state is
 		when CPU_NORMAL =>
@@ -651,10 +699,12 @@ begin
 			-- branch prediction
 			branch_predictor(
 				decode_result => decode_result_v,
+				pht_entry => pht_entry,
+				branch_target => branch_target,
 				pc => r.pc,
+				ghr => r.ghr,
 				next_pc => next_pc,
-				g_in => r.gshare,
-				g_out => v.gshare,
+				next_ghr => v.ghr,
 				stall => stall
 			);
 			if decode_result_v.need_dummy_rob_entry = '1' then
@@ -662,6 +712,9 @@ begin
 			end if;
 			decode_result_v.pc := r.pc;
 			decode_result_v.pc_predicted := next_pc;
+			decode_result_v.ghr := r.ghr;
+			decode_result_v.pht_entry := pht_entry;
+			decode_result_v.branch_target := branch_target;
 			-- read registers and issue
 			ra := read_reg(r.decode_result.ra, r.registers, v.rob.rob_array);
 			rb := read_reg(r.decode_result.rb, r.registers, v.rob.rob_array);
@@ -891,6 +944,9 @@ begin
 							opc => NOP_opc,
 							pc => r.decode_result.pc,
 							pc_next => r.decode_result.pc_predicted,
+							ghr => r.decode_result.ghr,
+							pht_entry => r.decode_result.pht_entry,
+							branch_target => r.decode_result.branch_target,
 							result => (others => '0'),
 							reg_num => reg_num_zero
 						);
@@ -901,6 +957,9 @@ begin
 							opc => r.decode_result.opc,
 							pc => r.decode_result.pc,
 							pc_next => r.decode_result.pc_predicted,
+							ghr => r.decode_result.ghr,
+							pht_entry => r.decode_result.pht_entry,
+							branch_target => r.decode_result.branch_target,
 							result => (others => '0'),
 							reg_num => r.decode_result.rt
 						);
@@ -942,14 +1001,16 @@ begin
 				end if;
 				v.rob.rob_array(to_integer(unsigned(v.rob.oldest))) := rob_zero;
 				v.rob.oldest := std_logic_vector(unsigned(v.rob.oldest) + 1);
-				v.gshare := commit_branch_predictor(oldest_rob, v.gshare);
+--				commit_branch_predictor(oldest_rob, v.gshare, btb_we, btb_addr, btb_entry, v.gshare);
+				commit_branch_predictor(oldest_rob, btb_we, btb_addr_write, btb_din_v);
 			elsif oldest_rob.state = ROB_Reset then
 				report "rob reset" severity note;
 				if oldest_rob.reg_num /= reg_num_zero then
 					assert v.registers(to_integer(unsigned(oldest_rob.reg_num))).tag.valid = '1' report "BUG @ register write reservation";
 					v.registers(to_integer(unsigned(oldest_rob.reg_num))).data := oldest_rob.result;
 				end if;
-				v.gshare := commit_branch_predictor(oldest_rob, v.gshare);
+--				commit_branch_predictor(oldest_rob, v.gshare, btb_we, btb_addr, btb_entry, v.gshare);
+				commit_branch_predictor(oldest_rob, btb_we, btb_addr_write, btb_din_v);
 				for i in v.registers'range loop
 					v.registers(i).tag := rs_tag_zero;
 				end loop;
@@ -958,8 +1019,8 @@ begin
 					cdb => cdb_zero,
 					registers => v.registers,
 					pc => oldest_rob.pc_next,
+					ghr => ghr_next(oldest_rob.ghr, oldest_rob.taken), -- assuming branch misprediction
 					rob => rob_ring_buffer_zero,
-					gshare => gshare_reset(v.gshare),
 					state => CPU_NORMAL,
 					inst_valid => '0',
 					state_sub => '0'
@@ -984,6 +1045,9 @@ begin
 			end case;
 		when others =>
 		end case;
+		btb_wea(0) <= btb_we;
+		btb_addra <= btb_addr_write;
+		btb_din <= btb_din_v;
 		go_pl <= go_pl_v;
 		alu_in <= alu_in_v;
 		fpu_in <= fpu_in_v;
