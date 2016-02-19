@@ -282,7 +282,7 @@ architecture twoproc of cpu_top is
 		ghr : in ghr_type;
 		next_pc : out pc_type;
 		next_ghr : out ghr_type;
-		stall : out boolean) is
+		id_stall : out boolean) is
 	variable taken : boolean;
 	begin
 		taken := pht_taken(pht_entry);
@@ -292,7 +292,7 @@ architecture twoproc of cpu_top is
 		else
 			next_pc := std_logic_vector(signed(pc) + 1);
 		end if;
-		stall := false;
+		id_stall := false;
 --		taken := predict(g_in, pc);
 ----		btb_entry := btb_lookup(g_in, pc);
 --		btb_entry := btb_decode(btb_dout);
@@ -304,10 +304,10 @@ architecture twoproc of cpu_top is
 			next_pc := std_logic_vector(signed(pc) + signed(decode_result.imm(pc_width-1 downto 0)));
 			next_ghr := ghr;
 		when JR_opc =>
-			if pht_entry /= "11" then
-				stall := true;
-				next_pc := pc;
-			end if;
+--			if pht_entry /= "11" then
+--				id_stall := true;
+--				next_pc := pc;
+--			end if;
 			next_ghr := ghr;
 		when JREQ_opc =>
 		when JRNEQ_opc =>
@@ -536,7 +536,7 @@ architecture twoproc of cpu_top is
 		variable next_target : pc_type;
 	begin
 		btb_we := '0';
-		btb_addr := (others => '0');
+		btb_addr := rob_entry.pc(rob_entry.ghr'length-1 downto 0) xor rob_entry.ghr;
 		btb_din := (others => '0');
 		if rob_entry.taken then
 			next_target := rob_entry.pc_next;
@@ -546,18 +546,25 @@ architecture twoproc of cpu_top is
 		case rob_entry.opc is
 		when JR_opc =>
 			gshare_entry_encode(rob_entry.pc_next, "11", btb_din);
+			btb_we := '1';
 		when JREQ_opc =>
 			btb_din := gshare_commit(rob_entry.taken, rob_entry.pht_entry, next_target);
+			btb_we := '1';
 		when JRNEQ_opc =>
 			btb_din := gshare_commit(rob_entry.taken, rob_entry.pht_entry, next_target);
+			btb_we := '1';
 		when JRGT_opc =>
 			btb_din := gshare_commit(rob_entry.taken, rob_entry.pht_entry, next_target);
+			btb_we := '1';
 		when JRGTE_opc =>
 			btb_din := gshare_commit(rob_entry.taken, rob_entry.pht_entry, next_target);
+			btb_we := '1';
 		when JRLT_opc =>
 			btb_din := gshare_commit(rob_entry.taken, rob_entry.pht_entry, next_target);
+			btb_we := '1';
 		when JRLTE_opc =>
 			btb_din := gshare_commit(rob_entry.taken, rob_entry.pht_entry, next_target);
+			btb_we := '1';
 		when others =>
 		end case;
 	end;
@@ -678,6 +685,7 @@ begin
 		branch_in_v := branch_pack.in_zero;
 		btb_we := '0';
 		btb_addr_write := (others => '0');
+		btb_din_v := (others => '0');
 		gshare_entry_decode(btb_dout, branch_target, pht_entry);
 		go_pl_v := '0';
 		case r.state is
@@ -705,7 +713,7 @@ begin
 				ghr => r.ghr,
 				next_pc => next_pc,
 				next_ghr => v.ghr,
-				stall => stall
+				id_stall => stall
 			);
 			if decode_result_v.need_dummy_rob_entry = '1' then
 				next_pc := r.pc;
@@ -912,7 +920,7 @@ begin
 				mem_rs_v := mem_pack.rs_zero;
 				branch_rs_v := branch_pack.rs_zero;
 			end if;
-			stall := stall or rob_full(r.rob);
+			stall := rob_full(r.rob);
 			assert not stall report "rob full" severity note;
 			case unit is
 				when ALU_UNIT =>
@@ -986,7 +994,7 @@ begin
 				cdb => v.cdb
 			);
 			-- commit ROB
-			oldest_rob := v.rob.rob_array(to_integer(unsigned(v.rob.oldest)));
+			oldest_rob := r.rob.rob_array(to_integer(unsigned(v.rob.oldest)));
 			if oldest_rob.state = ROB_Dummy then
 				mem_in_v.dummy_done := '1';
 				v.rob.rob_array(to_integer(unsigned(v.rob.oldest))) := rob_zero;
