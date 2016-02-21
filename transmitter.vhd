@@ -67,7 +67,7 @@ end entity;
 
 architecture beh of transif is
 -- FIFO
--- Standard FIFO
+-- First-Word Fall-Through FIFO
 -- width: 8
   component fifo8
     port (
@@ -89,7 +89,7 @@ architecture beh of transif is
 			data : in std_logic_vector(7 downto 0);
 			full : out std_logic := '0');
 	end component;
-	type state_type is (WaitState, ReadFifoState, TransmitState);
+	type state_type is (PreWaitState, PreTransmitState, WaitState, TransmitState);
 	signal state : state_type := WaitState;
 	signal rd_en : std_logic := '0';
 	signal empty : std_logic := '1';
@@ -122,20 +122,21 @@ begin
 	begin
 		if rising_edge(clk) then
 			case state is
+			when PreWaitState =>
+				rd_en <= '0';
+				state <= WaitState;
 			when WaitState =>
 				if empty = '0' then
-					rd_en <= '1';
-					state <= ReadFifoState;
+					state <= PreTransmitState;
+					go <= '1';
 				end if;
-			when ReadFifoState =>
-				rd_en <= '0';
-				go <= '1';
+			when PreTransmitState =>
+				go <= '0';
 				state <= TransmitState;
 			when TransmitState =>
-				if go = '1' then
-					go <= '0';
-				elsif t_full = '0' then
-					state <= WaitState;
+				if t_full = '0' then
+					state <= PreWaitState;
+					rd_en <= '1';
 				end if;
 			end case;
 		end if;

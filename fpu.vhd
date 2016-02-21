@@ -116,6 +116,7 @@ begin
 		for i in r.rs'range loop
 			v.rs(i).common.ra := register_update(r.rs(i).common.ra, fpu_in.cdb_in);
 			v.rs(i).common.rb := register_update(r.rs(i).common.rb, fpu_in.cdb_in);
+			v.rs(i).common.rc := register_update(r.rs(i).common.rc, fpu_in.cdb_in);
 		end loop;
 		-- execute
 		fadd_used := false;
@@ -141,6 +142,30 @@ begin
 							v.rs(i).common.state := RS_Executing;
 							v.rs(i).countdown := "000";
 						end if;
+					when FSUB_op =>
+						if not fadd_used then
+							fadd_op1_v := ra_data;
+							fadd_op2_v := (not rb_data(31)) & rb_data(30 downto 0);
+							fadd_used := true;
+							v.rs(i).common.state := RS_Executing;
+							v.rs(i).countdown := "000";
+						end if;
+					when FABA_op =>
+						if ra_data(30 downto 0) = (30 downto 0 => '0') then
+							v.rs(i).common.state := RS_Done;
+							v.rs(i).common.result := '0' & rb_data(30 downto 0);
+						elsif rb_data(30 downto 0) = (30 downto 0 => '0') then
+							v.rs(i).common.state := RS_Done;
+							v.rs(i).common.result := '0' & ra_data(30 downto 0);
+						else
+							if not fadd_used then
+								fadd_op1_v := ra_data;
+								fadd_op2_v := rb_data;
+								fadd_used := true;
+								v.rs(i).common.state := RS_Executing;
+								v.rs(i).countdown := "000";
+							end if;
+						end if;
 					when FMUL_op =>
 						if not fmul_used then
 							fmul_op1_v := ra_data;
@@ -163,23 +188,6 @@ begin
 							v.rs(i).common.state := RS_Executing;
 							v.rs(i).countdown := "001";
 						end if;
-					when FCMP_op =>
-						if ra_data(30 downto 0) = (30 downto 0 => '0') and rb_data(30 downto 0) = (30 downto 0 => '0') then
-							v.rs(i).common.result := eq_const;
-						elsif ra_data(31) = '0' and rb_data(31) = '1' then
-							v.rs(i).common.result := gt_const;
-						elsif ra_data(31) = '1' and rb_data(31) = '0' then
-							v.rs(i).common.result := lt_const;
-						else
-							if ra_data = rb_data then
-								v.rs(i).common.result := eq_const;
-							elsif (ra_data(31) = '1') xor (unsigned(ra_data(30 downto 0)) < unsigned(rb_data(30 downto 0))) then
-								v.rs(i).common.result := lt_const;
-							else
-								v.rs(i).common.result := gt_const;
-							end if;
-						end if;
-						v.rs(i).common.state := RS_Done;
 					when NOP_op =>
 --					when others =>
 				end case;
@@ -189,6 +197,12 @@ begin
 				case r.rs(i).op is
 					when FADD_op =>
 						v.rs(i).common.result := fadd_ans;
+						v.rs(i).common.state := RS_Done;
+					when FSUB_op =>
+						v.rs(i).common.result := fadd_ans;
+						v.rs(i).common.state := RS_Done;
+					when FABA_op =>
+						v.rs(i).common.result := '0' & fadd_ans(30 downto 0);
 						v.rs(i).common.state := RS_Done;
 					when FMUL_op =>
 						v.rs(i).common.result := fmul_ans;

@@ -210,12 +210,11 @@ architecture twoproc of cpu_top is
 		port(
 			clk, rst : in std_logic;
 		rs_in_op : in mem_pack.op_type;
-		rs_in_has_dummy : in std_logic;
 		rs_in_common : in rs_common_type;
 		cdb_in : in cdb_type;
 		cdb_next : in std_logic;-- set cdb_next = 1 when cdb_out is broadcasted
 		sync_rst : in std_logic;-- synchronous reset
-		dummy_done : in std_logic;
+		store_commit, out_commit, in_commit : in std_logic;
 		sramifout : in sramif_out;
 		recvifout : in recvif_out_type;
 		transifout : in transif_out_type;
@@ -248,36 +247,10 @@ architecture twoproc of cpu_top is
 	signal sramifin_pl : sramif_in;
 	signal go_pl, active_pl : std_logic := '0';
 	-- determines the next pc
---	procedure branch_predictor_cond_branch(
---		taken : in boolean;
---		btb_entry : in btb_entry_type;
---		pc : in pc_type;
---		g_in : in gshare_type;
---		next_pc : out pc_type;
---		g_out : out gshare_type;
---		stall : out boolean) is
---	variable g : gshare_type;
---	begin
---		g := g_in;
---		g := ghr_push(g, taken);
---		if taken then
---			if btb_entry.valid then
---				next_pc := btb_entry.target;
---				stall := false;
---			else
---				next_pc := pc;
---				stall := true;
---			end if;
---		else
---			next_pc := std_logic_vector(unsigned(pc) + 1);
---			stall := false;
---		end if;
---		g_out := g;
---	end;
 	procedure branch_predictor(
 		decode_result : in decode_result_type;
 		pht_entry : in pht_entry_type;
-		branch_target : in pc_type;
+		btb_entry : in btb_entry_type;
 		pc : in pc_type;
 		ghr : in ghr_type;
 		next_pc : out pc_type;
@@ -286,186 +259,364 @@ architecture twoproc of cpu_top is
 	variable taken : boolean;
 	begin
 		taken := pht_taken(pht_entry);
-		next_ghr := ghr_next(ghr, taken);
-		if taken then
-			next_pc := branch_target;
-		else
-			next_pc := std_logic_vector(signed(pc) + 1);
-		end if;
 		id_stall := false;
---		taken := predict(g_in, pc);
-----		btb_entry := btb_lookup(g_in, pc);
---		btb_entry := btb_decode(btb_dout);
---		if btb_entry.tag /= pc(pc_width-1 downto pht_array_width) then
---			btb_entry := btb_entry_zero;
---		end if;
 		case decode_result.opc is
-		when J_opc =>
-			next_pc := std_logic_vector(signed(pc) + signed(decode_result.imm(pc_width-1 downto 0)));
+		when JIF_opc =>
+			if taken then
+				next_pc := decode_result.imm(pc_width-1 downto 0);
+			else
+				next_pc := std_logic_vector(signed(pc) + 1);
+			end if;
+		when JRF_opc =>
+			if taken and btb_hit(btb_entry, pc) then
+				next_pc := btb_entry.target;
+			else
+				next_pc := std_logic_vector(signed(pc) + 1);
+			end if;
+		when CI_opc =>
+			next_pc := decode_result.imm(pc_width-1 downto 0);
+			taken := false;
 			next_ghr := ghr;
-		when JR_opc =>
---			if pht_entry /= "11" then
---				id_stall := true;
---				next_pc := pc;
---			end if;
+		when CR_opc =>
+			if btb_hit(btb_entry, pc) then
+				next_pc := btb_entry.target;
+			else
+				next_pc := std_logic_vector(signed(pc) + 1);
+			end if;
+			taken := false;
 			next_ghr := ghr;
-		when JREQ_opc =>
-		when JRNEQ_opc =>
-		when JRGT_opc =>
-		when JRGTE_opc =>
-		when JRLT_opc =>
-		when JRLTE_opc =>
+		when JIC_opc =>
+			if taken then
+				next_pc := decode_result.imm(pc_width-1 downto 0);
+			else
+				next_pc := std_logic_vector(signed(pc) + 1);
+			end if;
+		when JRC_opc =>
+			if taken and btb_hit(btb_entry, pc) then
+				next_pc := btb_entry.target;
+			else
+				next_pc := std_logic_vector(signed(pc) + 1);
+			end if;
+		when FJIC_opc =>
+			if taken then
+				next_pc := decode_result.imm(pc_width-1 downto 0);
+			else
+				next_pc := std_logic_vector(signed(pc) + 1);
+			end if;
+		when FJRC_opc =>
+			if taken and btb_hit(btb_entry, pc) then
+				next_pc := btb_entry.target;
+			else
+				next_pc := std_logic_vector(signed(pc) + 1);
+			end if;
+		when others =>
+			next_pc := std_logic_vector(signed(pc) + 1);
+			taken := false;
+			next_ghr := ghr;
+		end case;
+		next_ghr := ghr_next(ghr, taken);
+		case decode_result.opc is
+		when JIF_opc =>
+		when JRF_opc =>
+		when CI_opc =>
+		when CR_opc =>
+		when JIC_opc =>
+		when JRC_opc =>
+		when FJIC_opc =>
+		when FJRC_opc =>
+--		when J_opc =>
+--			next_pc := std_logic_vector(signed(pc) + signed(decode_result.imm(pc_width-1 downto 0)));
+--			next_ghr := ghr;
+--		when JR_opc =>
+--			next_ghr := ghr;
+--		when JREQ_opc =>
+--		when JRNEQ_opc =>
+--		when JRGT_opc =>
+--		when JRGTE_opc =>
+--		when JRLT_opc =>
+--		when JRLTE_opc =>
 		when others =>
 			next_pc := std_logic_vector(unsigned(pc) + 1);
 			next_ghr := ghr;
 		end case;
 	end branch_predictor;
+	procedure inst_decode_try_1op(
+		inst : in std_logic_vector(31 downto 0);
+		decode_result : out decode_result_type) is
+		alias opc : std_logic_vector(8 downto 0) is inst(31 downto 23);
+		alias ra : std_logic_vector(4 downto 0) is inst(22 downto 18);
+		alias imm : std_logic_vector(15 downto 0) is inst(17 downto 2);
+	begin
+		decode_result := decode_result_zero;
+		case opc is
+		when "000000001" =>
+			decode_result.opc := LIMM_opc;
+			decode_result.rt := ra;
+			decode_result.imm := imm;
+		when "000000010" =>
+			decode_result.opc := IN_opc;
+			decode_result.rt := ra;
+		when "000000011" =>
+			decode_result.opc := OUT_opc;
+			decode_result.ra := ra;
+		when others =>
+		end case;
+	end procedure;
+	procedure inst_decode_try_2iop(
+		inst : in std_logic_vector(31 downto 0);
+		decode_result : out decode_result_type) is
+		alias opc : std_logic_vector(5 downto 0) is inst(31 downto 26);
+		alias ra : std_logic_vector(4 downto 0) is inst(25 downto 21);
+		alias rb : std_logic_vector(4 downto 0) is inst(20 downto 16);
+		alias imm : std_logic_vector(15 downto 0) is inst(15 downto 0);
+	begin
+		decode_result := decode_result_zero;
+		case opc is
+		when "000001" =>
+			decode_result.opc := STWI_opc;
+			decode_result.ra := ra;
+			decode_result.rb := rb;
+			decode_result.imm := imm;
+		when "000010" =>
+			decode_result.opc := LDWI_opc;
+			decode_result.ra := ra;
+			decode_result.rb := rb;
+			decode_result.imm := imm;
+		when "000011" =>
+			decode_result.opc := JIF_opc;
+			decode_result.rt := ra;
+			decode_result.ra := rb;
+			decode_result.imm := imm;
+		when "000100" =>
+			decode_result.opc := CI_opc;
+			decode_result.rt := ra;
+			decode_result.imm := imm;
+		when "000101" =>
+			decode_result.opc := ADDI_opc;
+			decode_result.rt := ra;
+			decode_result.ra := rb;
+			decode_result.imm := imm;
+		when "000110" =>
+			decode_result.opc := SUBI_opc;
+			decode_result.rt := ra;
+			decode_result.ra := rb;
+			decode_result.imm := imm;
+		when others =>
+		end case;
+	end procedure;
+	procedure inst_decode_try_2icop(
+		inst : in std_logic_vector(31 downto 0);
+		decode_result : out decode_result_type) is
+		alias opc : std_logic_vector(2 downto 0) is inst(31 downto 29);
+		alias cond : std_logic_vector(2 downto 0) is inst(28 downto 26);
+		alias ra : std_logic_vector(4 downto 0) is inst(25 downto 21);
+		alias rb : std_logic_vector(4 downto 0) is inst(20 downto 16);
+		alias imm : std_logic_vector(15 downto 0) is inst(15 downto 0);
+	begin
+		decode_result := decode_result_zero;
+		case opc is
+		when "001" =>
+			decode_result.opc := CMPIC_opc;
+			decode_result.cond := cond;
+			decode_result.rt := ra;
+			decode_result.ra := rb;
+			decode_result.imm := imm;
+		when "010" =>
+			decode_result.opc := CMPAIC_opc;
+			decode_result.cond := cond;
+			decode_result.rt := ra;
+			decode_result.ra := ra;
+			decode_result.rb := rb;
+			decode_result.imm := imm;
+		when "011" =>
+			decode_result.opc := JIC_opc;
+			decode_result.cond := cond;
+			decode_result.ra := ra;
+			decode_result.rb := rb;
+			decode_result.imm := imm;
+		when "100" =>
+			decode_result.opc := FJIC_opc;
+			decode_result.cond := cond;
+			decode_result.ra := ra;
+			decode_result.rb := rb;
+			decode_result.imm := imm;
+		when others =>
+		end case;
+	end procedure;
+	procedure inst_decode_try_3cop(
+		inst : in std_logic_vector(31 downto 0);
+		decode_result : out decode_result_type) is
+		alias opc : std_logic_vector(11 downto 0) is inst(31 downto 20);
+		alias cond : std_logic_vector(2 downto 0) is inst(19 downto 17);
+		alias ra : std_logic_vector(4 downto 0) is inst(16 downto 12);
+		alias rb : std_logic_vector(4 downto 0) is inst(11 downto 7);
+		alias rc : std_logic_vector(4 downto 0) is inst(6 downto 2);
+	begin
+		decode_result := decode_result_zero;
+		case opc is
+		when "000000000001" =>
+			decode_result.opc := CMPC_opc;
+			decode_result.cond := cond;
+			decode_result.rt := ra;
+			decode_result.ra := rb;
+			decode_result.rb := rc;
+		when "000000000010" =>
+			decode_result.opc := FCMPC_opc;
+			decode_result.cond := cond;
+			decode_result.rt := ra;
+			decode_result.ra := rb;
+			decode_result.rb := rc;
+		when "000000000011" =>
+			decode_result.opc := CMPAC_opc;
+			decode_result.cond := cond;
+			decode_result.rt := ra;
+			decode_result.ra := ra;
+			decode_result.rb := rb;
+			decode_result.rc := rc;
+		when "000000000100" =>
+			decode_result.opc := FCMPAC_opc;
+			decode_result.cond := cond;
+			decode_result.rt := ra;
+			decode_result.ra := ra;
+			decode_result.rb := rb;
+			decode_result.rc := rc;
+		when "000000000101" =>
+			decode_result.opc := JRC_opc;
+			decode_result.cond := cond;
+			decode_result.ra := ra;
+			decode_result.rb := rb;
+			decode_result.rc := rc;
+		when "000000000110" =>
+			decode_result.opc := FJRC_opc;
+			decode_result.cond := cond;
+			decode_result.ra := ra;
+			decode_result.rb := rb;
+			decode_result.rc := rc;
+		when others =>
+		end case;
+	end procedure;
+	procedure inst_decode_try_3op(
+		inst : in std_logic_vector(31 downto 0);
+		decode_result : out decode_result_type) is
+		alias opc : std_logic_vector(16 downto 0) is inst(31 downto 15);
+		alias ra : std_logic_vector(4 downto 0) is inst(14 downto 10);
+		alias rb : std_logic_vector(4 downto 0) is inst(9 downto 5);
+		alias rc : std_logic_vector(4 downto 0) is inst(4 downto 0);
+	begin
+		case opc is
+		when "00000000000000000" =>
+			decode_result.opc := JRF_opc;
+			decode_result.rt := ra;
+			decode_result.ra := rb;
+			decode_result.rb := rc;
+		when "00000000000000001" =>
+			decode_result.opc := CR_opc;
+			decode_result.rt := ra;
+			decode_result.ra := rc;
+		when "00000000000000010" =>
+			decode_result.opc := STW_opc;
+			decode_result.ra := ra;
+			decode_result.rb := rb;
+			decode_result.rc := rc;
+		when "00000000000000011" =>
+			decode_result.opc := LDW_opc;
+			decode_result.rt := ra;
+			decode_result.ra := rb;
+			decode_result.rb := rc;
+		when "00000000000000100" =>
+			decode_result.opc := ADD_opc;
+			decode_result.rt := ra;
+			decode_result.ra := rb;
+			decode_result.rb := rc;
+		when "00000000000000101" =>
+			decode_result.opc := SUB_opc;
+			decode_result.rt := ra;
+			decode_result.ra := rb;
+			decode_result.rb := rc;
+		when "00000000000000110" =>
+			decode_result.opc := AND_opc;
+			decode_result.rt := ra;
+			decode_result.ra := rb;
+			decode_result.rb := rc;
+		when "00000000000000111" =>
+			decode_result.opc := OR_opc;
+			decode_result.rt := ra;
+			decode_result.ra := rb;
+			decode_result.rb := rc;
+		when "00000000000001000" =>
+			decode_result.opc := XOR_opc;
+			decode_result.rt := ra;
+			decode_result.ra := rb;
+			decode_result.rb := rc;
+		when "00000000000001001" =>
+			decode_result.opc := SLL_opc;
+			decode_result.rt := ra;
+			decode_result.ra := rb;
+			decode_result.rb := rc;
+		when "00000000000001010" =>
+			decode_result.opc := SRL_opc;
+			decode_result.rt := ra;
+			decode_result.ra := rb;
+			decode_result.rb := rc;
+		when "00000000000001011" =>
+			decode_result.opc := FADD_opc;
+			decode_result.rt := ra;
+			decode_result.ra := rb;
+			decode_result.rb := rc;
+		when "00000000000001100" =>
+			decode_result.opc := FSUB_opc;
+			decode_result.rt := ra;
+			decode_result.ra := rb;
+			decode_result.rb := rc;
+		when "00000000000001101" =>
+			decode_result.opc := FMUL_opc;
+			decode_result.rt := ra;
+			decode_result.ra := rb;
+			decode_result.rb := rc;
+		when "00000000000001110" =>
+			decode_result.opc := FINV_opc;
+			decode_result.rt := ra;
+			decode_result.ra := rb;
+		when "00000000000001111" =>
+			decode_result.opc := FABA_opc;
+			decode_result.rt := ra;
+			decode_result.ra := rb;
+			decode_result.rb := rc;
+		when "00000000000010000" =>
+			decode_result.opc := FSQRT_opc;
+			decode_result.rt := ra;
+			decode_result.ra := rb;
+		when others =>
+		end case;
+	end procedure;
 	procedure inst_decode(
 		inst : in std_logic_vector(31 downto 0);
 		decode_result : out decode_result_type) is
-		alias opc_rev1 : std_logic_vector(7 downto 0) is inst(31 downto 24);
---		alias rt_rev1 : std_logic_vector(7 downto 0) is inst(23 downto 16);
---		alias ra_rev1 : std_logic_vector(7 downto 0) is inst(15 downto 8);
---		alias rb_rev1 : std_logic_vector(7 downto 0) is inst(7 downto 0);
-		alias rt_rev1 : std_logic_vector(reg_num_width-1 downto 0) is inst(15+reg_num_width downto 16);
-		alias ra_rev1 : std_logic_vector(reg_num_width-1 downto 0) is inst(7+reg_num_width downto 8);
-		alias rb_rev1 : std_logic_vector(reg_num_width-1 downto 0) is inst(reg_num_width-1 downto 0);
-		alias imm_rev1 : std_logic_vector(15 downto 0) is inst(15 downto 0);
---		alias opc_rev2 : std_logic_vector(5 downto 0) is inst(31 downto 26);
+		variable decode_result_1op : decode_result_type;
+		variable decode_result_2iop : decode_result_type;
+		variable decode_result_2icop : decode_result_type;
+		variable decode_result_3cop : decode_result_type;
+		variable decode_result_3op : decode_result_type;
 	begin
-		decode_result := decode_result_zero;
-		case opc_rev1 is
-		when x"D0" => --limm
-			decode_result.opc := LIMM_opc;
-			decode_result.rt := rt_rev1;
-			decode_result.imm := imm_rev1;
-		when x"D1" => --cmp
-			decode_result.opc := CMP_opc;
-			decode_result.rt := rt_rev1;
-			decode_result.ra := ra_rev1;
-			decode_result.rb := rb_rev1;
-		when x"D2" => --in
-			decode_result.opc := IN_opc;
-			decode_result.rt := rt_rev1;
-			decode_result.need_dummy_rob_entry := '1';
-		when x"D3" => --out
-			decode_result.opc := OUT_opc;
-			decode_result.ra := rt_rev1;
-			decode_result.need_dummy_rob_entry := '1';
-		when x"D4" => --j
-			decode_result.opc := J_opc;
-			decode_result.rt := rt_rev1;
-			decode_result.imm := imm_rev1;
-		when x"D5" => --jr
-			decode_result.opc := JR_opc;
-			decode_result.rt := rt_rev1;
-			decode_result.ra := ra_rev1;
-		when x"D8" => --stw
-			decode_result.opc := STW_opc;
-			decode_result.ra := ra_rev1;
-			decode_result.rb := rt_rev1;
-			decode_result.need_dummy_rob_entry := '1';
-		when x"D9" => --ldw
-			decode_result.opc := LDW_opc;
-			decode_result.ra := ra_rev1;
-			decode_result.rt := rt_rev1;
-		when x"E0" => --add
-			decode_result.opc := ADD_opc;
-			decode_result.rt := rt_rev1;
-			decode_result.ra := ra_rev1;
-			decode_result.rb := rb_rev1;
-		when x"E1" => --sub
-			decode_result.opc := SUB_opc;
-			decode_result.rt := rt_rev1;
-			decode_result.ra := ra_rev1;
-			decode_result.rb := rb_rev1;
-		when x"E2" => --and
-			decode_result.opc := AND_opc;
-			decode_result.rt := rt_rev1;
-			decode_result.ra := ra_rev1;
-			decode_result.rb := rb_rev1;
-		when x"E3" => --or
-			decode_result.opc := OR_opc;
-			decode_result.rt := rt_rev1;
-			decode_result.ra := ra_rev1;
-			decode_result.rb := rb_rev1;
-		when x"E4" => --xor
-			decode_result.opc := XOR_opc;
-			decode_result.rt := rt_rev1;
-			decode_result.ra := ra_rev1;
-			decode_result.rb := rb_rev1;
-		when x"E5" => --not
-			decode_result.opc := NOT_opc;
-			decode_result.rt := rt_rev1;
-			decode_result.ra := ra_rev1;
-			decode_result.rb := rb_rev1;
-		when x"E6" => --sll
-			decode_result.opc := SLL_opc;
-			decode_result.rt := rt_rev1;
-			decode_result.ra := ra_rev1;
-			decode_result.rb := rb_rev1;
-		when x"E7" => --srl
-			decode_result.opc := SRL_opc;
-			decode_result.rt := rt_rev1;
-			decode_result.ra := ra_rev1;
-			decode_result.rb := rb_rev1;
-		when x"F0" => --jreq
-			decode_result.opc := JREQ_opc;
-			decode_result.rt := rt_rev1;
-			decode_result.ra := ra_rev1;
-			decode_result.rb := rb_rev1;
-		when x"F1" => --jrneq
-			decode_result.opc := JRNEQ_opc;
-			decode_result.rt := rt_rev1;
-			decode_result.ra := ra_rev1;
-			decode_result.rb := rb_rev1;
-		when x"F2" => --jrgt
-			decode_result.opc := JRGT_opc;
-			decode_result.rt := rt_rev1;
-			decode_result.ra := ra_rev1;
-			decode_result.rb := rb_rev1;
-		when x"F3" => --jrgte
-			decode_result.opc := JRGTE_opc;
-			decode_result.rt := rt_rev1;
-			decode_result.ra := ra_rev1;
-			decode_result.rb := rb_rev1;
-		when x"F4" => --jrlt
-			decode_result.opc := JRLT_opc;
-			decode_result.rt := rt_rev1;
-			decode_result.ra := ra_rev1;
-			decode_result.rb := rb_rev1;
-		when x"F5" => --jrlte
-			decode_result.opc := JRLTE_opc;
-			decode_result.rt := rt_rev1;
-			decode_result.ra := ra_rev1;
-			decode_result.rb := rb_rev1;
-		when x"F8" => --fadd
-			decode_result.opc := FADD_opc;
-			decode_result.rt := rt_rev1;
-			decode_result.ra := ra_rev1;
-			decode_result.rb := rb_rev1;
-		when x"F9" => --fmul
-			decode_result.opc := FMUL_opc;
-			decode_result.rt := rt_rev1;
-			decode_result.ra := ra_rev1;
-			decode_result.rb := rb_rev1;
-		when x"FA" => --finv
-			decode_result.opc := FINV_opc;
-			decode_result.rt := rt_rev1;
-			decode_result.ra := ra_rev1;
-			decode_result.rb := rb_rev1;
-		when x"FE" => --fsqrt
-			decode_result.opc := FSQRT_opc;
-			decode_result.rt := rt_rev1;
-			decode_result.ra := ra_rev1;
-		when x"FF" => --fcmp
-			decode_result.opc := FCMP_opc;
-			decode_result.rt := rt_rev1;
-			decode_result.ra := ra_rev1;
-			decode_result.rb := rb_rev1;
-		when others => --undefined instruction
+		inst_decode_try_1op(inst, decode_result_1op);
+		inst_decode_try_2iop(inst, decode_result_2iop);
+		inst_decode_try_2icop(inst, decode_result_2icop);
+		inst_decode_try_3cop(inst, decode_result_3cop);
+		inst_decode_try_3op(inst, decode_result_3op);
+		if decode_result_1op.opc /= NOP_opc then
+			decode_result := decode_result_1op;
+		elsif decode_result_2iop.opc /= NOP_opc then
+			decode_result := decode_result_2iop;
+		elsif decode_result_2icop.opc /= NOP_opc then
+			decode_result := decode_result_2icop;
+		elsif decode_result_3cop.opc /= NOP_opc then
+			decode_result := decode_result_3cop;
+		elsif decode_result_3op.opc /= NOP_opc then
+			decode_result := decode_result_3op;
+		else
+			decode_result := decode_result_zero;
 			report "undefined instruction" severity warning;
-		end case;
+		end if;
 	end inst_decode;
 	function read_reg(
 		reg_num : reg_num_type;
@@ -532,66 +683,112 @@ architecture twoproc of cpu_top is
 		end if;
 		return new_rob_array;
 	end update_ROB;
-	procedure commit_branch_predictor(rob_entry : in rob_type; btb_we : out std_logic; btb_addr : out std_logic_vector(pht_array_width-1 downto 0); btb_din : out gshare_entry_type) is
+	procedure commit_branch_predictor(rob_entry : in rob_type; btb_we : out std_logic; btb_addr : out std_logic_vector(pht_array_width-1 downto 0); btb_din : out btb_type; pht_we : out std_logic; pht_addr : out std_logic_vector(pht_array_width-1 downto 0); pht_din : out pht_entry_type) is
 		variable next_target : pc_type;
+		variable btb_entry : btb_entry_type;
 	begin
 		btb_we := '0';
-		btb_addr := rob_entry.pc(rob_entry.ghr'length-1 downto 0) xor rob_entry.ghr;
-		btb_din := (others => '0');
+		pht_we := '0';
+		btb_addr := rob_entry.pc(pht_array_width-1 downto 0);
+		pht_addr := rob_entry.pc(rob_entry.ghr'length-1 downto 0) xor rob_entry.ghr;
+		pht_din := pht_commit(rob_entry.taken, rob_entry.pht_entry);
 		if rob_entry.taken then
-			next_target := rob_entry.pc_next;
+			btb_entry := (
+				valid => true,
+				tag => rob_entry.pc(pc_width-1 downto pht_array_width),
+				target => rob_entry.pc_next
+			);
 		else
-			next_target := rob_entry.branch_target;
+			btb_entry := rob_entry.btb_entry;
 		end if;
+		btb_din := btb_encode(btb_entry);
 		case rob_entry.opc is
-		when JR_opc =>
-			gshare_entry_encode(rob_entry.pc_next, "11", btb_din);
+		when JIF_opc =>
+			pht_we := '1';
+		when JRF_opc =>
 			btb_we := '1';
-		when JREQ_opc =>
-			btb_din := gshare_commit(rob_entry.taken, rob_entry.pht_entry, next_target);
+			pht_we := '1';
+		when CI_opc =>
+		when CR_opc =>
 			btb_we := '1';
-		when JRNEQ_opc =>
-			btb_din := gshare_commit(rob_entry.taken, rob_entry.pht_entry, next_target);
+			pht_we := '1';
+		when JIC_opc =>
+			pht_we := '1';
+		when JRC_opc =>
 			btb_we := '1';
-		when JRGT_opc =>
-			btb_din := gshare_commit(rob_entry.taken, rob_entry.pht_entry, next_target);
+			pht_we := '1';
+		when FJIC_opc =>
+			pht_we := '1';
+		when FJRC_opc =>
 			btb_we := '1';
-		when JRGTE_opc =>
-			btb_din := gshare_commit(rob_entry.taken, rob_entry.pht_entry, next_target);
-			btb_we := '1';
-		when JRLT_opc =>
-			btb_din := gshare_commit(rob_entry.taken, rob_entry.pht_entry, next_target);
-			btb_we := '1';
-		when JRLTE_opc =>
-			btb_din := gshare_commit(rob_entry.taken, rob_entry.pht_entry, next_target);
-			btb_we := '1';
+			pht_we := '1';
 		when others =>
 		end case;
 	end;
-
+	function ghr_rollback(rob_entry : rob_type) return ghr_type is
+	begin
+		case rob_entry.opc is
+		when JIF_opc =>
+			return ghr_next(rob_entry.ghr, rob_entry.taken);
+		when JRF_opc =>
+			return ghr_next(rob_entry.ghr, rob_entry.taken);
+		when JIC_opc =>
+			return ghr_next(rob_entry.ghr, rob_entry.taken);
+		when JRC_opc =>
+			return ghr_next(rob_entry.ghr, rob_entry.taken);
+		when FJIC_opc =>
+			return ghr_next(rob_entry.ghr, rob_entry.taken);
+		when FJRC_opc =>
+			return ghr_next(rob_entry.ghr, rob_entry.taken);
+		when others =>
+			return rob_entry.ghr;
+		end case;
+	end ghr_rollback;
 -- simple dual port ram
--- read_first
+-- write_first
 -- initialized by 0
--- width: (2+pc_width)
+-- width: btb_type(pc_width+pc_width-pht_array_width+1)
 -- depth: 2^pht_array_width
 component btb_ram IS
   PORT (
     clka : IN STD_LOGIC;
     wea : IN STD_LOGIC_VECTOR(0 DOWNTO 0);
     addra : IN STD_LOGIC_VECTOR(9 DOWNTO 0);
-    dina : IN STD_LOGIC_VECTOR(16 DOWNTO 0);
+    dina : IN STD_LOGIC_VECTOR(20 DOWNTO 0);
     clkb : IN STD_LOGIC;
     addrb : IN STD_LOGIC_VECTOR(9 DOWNTO 0);
-    doutb : OUT STD_LOGIC_VECTOR(16 DOWNTO 0)
+    doutb : OUT STD_LOGIC_VECTOR(20 DOWNTO 0)
   );
 END component;
+-- simple dual port ram
+-- write_first
+-- initialized by 0
+-- width: 2
+-- depth: 2^pht_array_width
+component pht_ram IS
+  PORT (
+    clka : IN STD_LOGIC;
+    wea : IN STD_LOGIC_VECTOR(0 DOWNTO 0);
+    addra : IN STD_LOGIC_VECTOR(9 DOWNTO 0);
+    dina : IN STD_LOGIC_VECTOR(1 DOWNTO 0);
+    clkb : IN STD_LOGIC;
+    addrb : IN STD_LOGIC_VECTOR(9 DOWNTO 0);
+    doutb : OUT STD_LOGIC_VECTOR(1 DOWNTO 0)
+  );
+END component;
+
 	signal btb_wea : std_logic_vector(0 downto 0) := "0";
 	signal btb_addra, btb_addrb : std_logic_vector(9 downto 0) := (others => '0');
-	signal btb_din : gshare_entry_type := (others => '0');
-	signal btb_dout : gshare_entry_type;
+	signal btb_din : btb_type := (others => '0');
+	signal btb_dout : btb_type;
+	signal pht_wea : std_logic_vector(0 downto 0) := "0";
+	signal pht_addra, pht_addrb : std_logic_vector(9 downto 0) := (others => '0');
+	signal pht_din : std_logic_vector(1 downto 0) := (others => '0');
+	signal pht_dout : std_logic_vector(1 downto 0);
 begin
 	bram_addr_cpu <= r_in.pc;
-	btb_addrb <= r_in.pc(r_in.ghr'length-1 downto 0) xor r_in.ghr;
+	pht_addrb <= r_in.pc(r_in.ghr'length-1 downto 0) xor r_in.ghr;
+	btb_addrb <= r_in.pc(pht_array_width-1 downto 0);
 	bram_addr <= bram_addr_pl when r.state = CPU_LOADING else bram_addr_cpu;
 	cpu_top_out.sramifin <= sramifin_pl when r.state = CPU_LOADING else mem_out.sramifin;
 	cpu_top_out.recvifin <= recvifin_pl when r.state = CPU_LOADING else mem_out.recvifin;
@@ -608,12 +805,13 @@ begin
 		clk => clk,
 		rst => rst,
 		rs_in_op => mem_in.rs_in.op,
-		rs_in_has_dummy => mem_in.rs_in.has_dummy,
 		rs_in_common => mem_in.rs_in.common,
 		cdb_in => mem_in.cdb_in,
 		cdb_next => mem_in.cdb_next,
 		sync_rst => mem_in.rst,
-		dummy_done => mem_in.dummy_done,
+		store_commit => mem_in.store_commit,
+		out_commit => mem_in.out_commit,
+		in_commit => mem_in.in_commit,
 		sramifout => mem_in.sramifout,
 		recvifout => mem_in.recvifout,
 		transifout => mem_in.transifout,
@@ -643,6 +841,16 @@ begin
 		addrb => btb_addrb,
 		doutb => btb_dout
 	);
+	pht_ram_l : pht_ram
+	PORT map (
+		clka => clk,
+		clkb => clk,
+		wea => pht_wea,
+		addra => pht_addra,
+		dina => pht_din,
+		addrb => pht_addrb,
+		doutb => pht_dout
+	);
 	process(clk, rst)
 	begin
 		if rst = '1' then
@@ -667,16 +875,18 @@ begin
 		variable stall : boolean;
 		variable oldest_rob : rob_type;
 		-- read_regs
-		variable ra, rb : register_type;
+		variable ra, rb, rc : register_type;
 		variable rs_common_3 : rs_common_type;
-		variable zext_imm : std_logic_vector(31 downto 0);
-		variable insert_dummy_rob_entry : boolean;
+		variable zext_imm_data : std_logic_vector(31 downto 0);
+		variable zext_imm : register_type;
 		variable go_pl_v : std_logic;
 		variable btb_we : std_logic;
 		variable btb_addr_write : std_logic_vector(pht_array_width-1 downto 0);
-		variable btb_din_v : gshare_entry_type;
-		variable pht_entry : pht_entry_type;
-		variable branch_target : pc_type;
+		variable btb_din_v : btb_type;
+		variable pht_we : std_logic;
+		variable pht_addr_write : std_logic_vector(pht_array_width-1 downto 0);
+		variable pht_din_v : pht_entry_type;
+		variable btb_entry : btb_entry_type;
 	begin
 		v := r;
 		alu_in_v := alu_pack.in_zero;
@@ -686,7 +896,10 @@ begin
 		btb_we := '0';
 		btb_addr_write := (others => '0');
 		btb_din_v := (others => '0');
-		gshare_entry_decode(btb_dout, branch_target, pht_entry);
+		pht_we := '0';
+		pht_addr_write := (others => '0');
+		pht_din_v := (others => '0');
+		btb_entry := btb_decode(btb_dout);
 		go_pl_v := '0';
 		case r.state is
 		when CPU_NORMAL =>
@@ -701,39 +914,37 @@ begin
 				inst => bram_dout,
 				decode_result => decode_result_v
 			);
-			if decode_result_v.need_dummy_rob_entry = '1' and r.decode_result.need_dummy_rob_entry = '1' then
-				decode_result_v.need_dummy_rob_entry := '0';
-			end if;
 			-- branch prediction
 			branch_predictor(
 				decode_result => decode_result_v,
-				pht_entry => pht_entry,
-				branch_target => branch_target,
+				pht_entry => pht_dout,
+				btb_entry => btb_entry,
 				pc => r.pc,
 				ghr => r.ghr,
 				next_pc => next_pc,
 				next_ghr => v.ghr,
 				id_stall => stall
 			);
-			if decode_result_v.need_dummy_rob_entry = '1' then
-				next_pc := r.pc;
-			end if;
 			decode_result_v.pc := r.pc;
 			decode_result_v.pc_predicted := next_pc;
 			decode_result_v.ghr := r.ghr;
-			decode_result_v.pht_entry := pht_entry;
-			decode_result_v.branch_target := branch_target;
+			decode_result_v.pht_entry := pht_dout;
+			decode_result_v.btb_entry := btb_entry;
 			-- read registers and issue
 			ra := read_reg(r.decode_result.ra, r.registers, v.rob.rob_array);
 			rb := read_reg(r.decode_result.rb, r.registers, v.rob.rob_array);
+			rc := read_reg(r.decode_result.rc, r.registers, v.rob.rob_array);
+			zext_imm_data := x"0000" & r.decode_result.imm;
+			zext_imm := (data => zext_imm_data, tag => rs_tag_zero);
 			alu_rs_v := alu_pack.rs_zero;
 			fpu_rs_v := fpu_pack.rs_zero;
 			mem_rs_v := mem_pack.rs_zero;
 			branch_rs_v := branch_pack.rs_zero;
-			zext_imm := x"0000" & r.decode_result.imm;
 			rs_common_3 := (
 				ra => ra,
 				rb => rb,
+				rc => rc,
+				cond => r.decode_result.cond,
 				state => RS_Waiting,
 				result => (others => '0'),
 				rob_num => r.rob.youngest,
@@ -745,19 +956,105 @@ begin
 			when LIMM_opc =>
 				unit := ALU_UNIT;
 				alu_rs_v.op := alu_pack.LIMM_op;
-				alu_rs_v.common := (
-					ra => (data => zext_imm, tag => rs_tag_zero),
-					rb => register_zero,
-					state => RS_Waiting,
-					result => (others => '0'),
-					rob_num => r.rob.youngest,
-					pc => r.decode_result.pc,
-					pc_next => (others => '0')
-				);
-			when CMP_opc =>
-				unit := ALU_UNIT;
-				alu_rs_v.op := alu_pack.CMP_op;
 				alu_rs_v.common := rs_common_3;
+				alu_rs_v.common.ra := zext_imm;
+			when OUT_opc =>
+				unit := MEM_UNIT;
+				mem_rs_v.op := mem_pack.OUT_op;
+				mem_rs_v.common := rs_common_3;
+			when IN_opc =>
+				unit := MEM_UNIT;
+				mem_rs_v.op := mem_pack.IN_op;
+			when STWI_opc =>
+				unit := MEM_UNIT;
+				mem_rs_v.op := mem_pack.STW_op;
+				mem_rs_v.common := rs_common_3;
+				mem_rs_v.common.rc := zext_imm;
+			when LDWI_opc =>
+				unit := MEM_UNIT;
+				mem_rs_v.op := mem_pack.LDW_op;
+				mem_rs_v.common := rs_common_3;
+				mem_rs_v.common.rb := zext_imm;
+			when JIF_opc =>
+				unit := BRANCH_UNIT;
+				branch_rs_v.op := branch_pack.JF_op;
+				branch_rs_v.common := rs_common_3;
+				branch_rs_v.common.rb := zext_imm;
+			when CI_opc =>
+				unit := BRANCH_UNIT;
+				branch_rs_v.op := branch_pack.C_op;
+				branch_rs_v.common := rs_common_3;
+				branch_rs_v.common.ra := zext_imm;
+			when ADDI_opc =>
+				unit := ALU_UNIT;
+				alu_rs_v.op := alu_pack.ADD_op;
+				alu_rs_v.common := rs_common_3;
+				alu_rs_v.common.rb := zext_imm;
+			when SUBI_opc =>
+				unit := ALU_UNIT;
+				alu_rs_v.op := alu_pack.SUB_op;
+				alu_rs_v.common := rs_common_3;
+				alu_rs_v.common.rb := zext_imm;
+			when CMPIC_opc =>
+				unit := ALU_UNIT;
+				alu_rs_v.op := alu_pack.CMPC_op;
+				alu_rs_v.common := rs_common_3;
+				alu_rs_v.common.rb := zext_imm;
+			when CMPAIC_opc =>
+				unit := ALU_UNIT;
+				alu_rs_v.op := alu_pack.CMPAC_op;
+				alu_rs_v.common := rs_common_3;
+				alu_rs_v.common.rc := zext_imm;
+			when JIC_opc =>
+				unit := BRANCH_UNIT;
+				branch_rs_v.op := branch_pack.JC_op;
+				branch_rs_v.common := rs_common_3;
+				branch_rs_v.common.rc := zext_imm;
+			when FJIC_opc =>
+				unit := BRANCH_UNIT;
+				branch_rs_v.op := branch_pack.FJC_op;
+				branch_rs_v.common := rs_common_3;
+				branch_rs_v.common.rc := zext_imm;
+			when CMPC_opc =>
+				unit := ALU_UNIT;
+				alu_rs_v.op := alu_pack.CMPC_op;
+				alu_rs_v.common := rs_common_3;
+			when FCMPC_opc =>
+				unit := ALU_UNIT;
+				alu_rs_v.op := alu_pack.FCMPC_op;
+				alu_rs_v.common := rs_common_3;
+			when CMPAC_opc =>
+				unit := ALU_UNIT;
+				alu_rs_v.op := alu_pack.CMPAC_op;
+				alu_rs_v.common := rs_common_3;
+			when FCMPAC_opc =>
+				unit := ALU_UNIT;
+				alu_rs_v.op := alu_pack.FCMPAC_op;
+				alu_rs_v.common := rs_common_3;
+			when JRC_opc =>
+				unit := BRANCH_UNIT;
+				branch_rs_v.op := branch_pack.JC_op;
+				branch_rs_v.common := rs_common_3;
+			when FJRC_opc =>
+				unit := BRANCH_UNIT;
+				branch_rs_v.op := branch_pack.FJC_op;
+				branch_rs_v.common := rs_common_3;
+			when JRF_opc =>
+				unit := BRANCH_UNIT;
+				branch_rs_v.op := branch_pack.JF_op;
+				branch_rs_v.common := rs_common_3;
+			when CR_opc =>
+				unit := BRANCH_UNIT;
+				branch_rs_v.op := branch_pack.C_op;
+				branch_rs_v.common := rs_common_3;
+			when STW_opc =>
+				unit := MEM_UNIT;
+				mem_rs_v.op := mem_pack.STW_op;
+				mem_rs_v.common := rs_common_3;
+			when LDW_opc =>
+				unit := MEM_UNIT;
+				mem_rs_v.op := mem_pack.LDW_op;
+				mem_rs_v.common := rs_common_3;
 			when ADD_opc =>
 				unit := ALU_UNIT;
 				alu_rs_v.op := alu_pack.ADD_op;
@@ -778,10 +1075,6 @@ begin
 				unit := ALU_UNIT;
 				alu_rs_v.op := alu_pack.XOR_op;
 				alu_rs_v.common := rs_common_3;
-			when NOT_opc =>
-				unit := ALU_UNIT;
-				alu_rs_v.op := alu_pack.NOT_op;
-				alu_rs_v.common := rs_common_3;
 			when SLL_opc =>
 				unit := ALU_UNIT;
 				alu_rs_v.op := alu_pack.SLL_op;
@@ -794,6 +1087,10 @@ begin
 				unit := FPU_UNIT;
 				fpu_rs_v.op := fpu_pack.FADD_op;
 				fpu_rs_v.common := rs_common_3;
+			when FSUB_opc =>
+				unit := FPU_UNIT;
+				fpu_rs_v.op := fpu_pack.FSUB_op;
+				fpu_rs_v.common := rs_common_3;
 			when FMUL_opc =>
 				unit := FPU_UNIT;
 				fpu_rs_v.op := fpu_pack.FMUL_op;
@@ -802,124 +1099,16 @@ begin
 				unit := FPU_UNIT;
 				fpu_rs_v.op := fpu_pack.FINV_op;
 				fpu_rs_v.common := rs_common_3;
+			when FABA_opc =>
+				unit := FPU_UNIT;
+				fpu_rs_v.op := fpu_pack.FABA_op;
+				fpu_rs_v.common := rs_common_3;
 			when FSQRT_opc =>
 				unit := FPU_UNIT;
 				fpu_rs_v.op := fpu_pack.FSQRT_op;
 				fpu_rs_v.common := rs_common_3;
-			when FCMP_opc =>
-				unit := FPU_UNIT;
-				fpu_rs_v.op := fpu_pack.FCMP_op;
-				fpu_rs_v.common := rs_common_3;
-			when J_opc =>
-				unit := BRANCH_UNIT;
-				branch_rs_v.op := branch_pack.J_op;
-				branch_rs_v.common := (
-					ra => (data => zext_imm, tag => rs_tag_zero),
-					rb => register_zero,
-					state => RS_Waiting,
-					result => (others => '0'),
-					rob_num => r.rob.youngest,
-					pc => r.decode_result.pc,
-					pc_next => (others => '0')
-				);
-			when JR_opc =>
-				unit := BRANCH_UNIT;
-				branch_rs_v.op := branch_pack.JR_op;
-				branch_rs_v.common := (
-					ra => ra,
-					rb => register_zero,
-					state => RS_Waiting,
-					result => (others => '0'),
-					rob_num => r.rob.youngest,
-					pc => r.decode_result.pc,
-					pc_next => (others => '0')
-				);
-			when JREQ_opc =>
-				unit := BRANCH_UNIT;
-				branch_rs_v.op := branch_pack.JREQ_op;
-				branch_rs_v.common := rs_common_3;
-			when JRNEQ_opc =>
-				unit := BRANCH_UNIT;
-				branch_rs_v.op := branch_pack.JRNEQ_op;
-				branch_rs_v.common := rs_common_3;
-			when JRGT_opc =>
-				unit := BRANCH_UNIT;
-				branch_rs_v.op := branch_pack.JRGT_op;
-				branch_rs_v.common := rs_common_3;
-			when JRGTE_opc =>
-				unit := BRANCH_UNIT;
-				branch_rs_v.op := branch_pack.JRGTE_op;
-				branch_rs_v.common := rs_common_3;
-			when JRLT_opc =>
-				unit := BRANCH_UNIT;
-				branch_rs_v.op := branch_pack.JRLT_op;
-				branch_rs_v.common := rs_common_3;
-			when JRLTE_opc =>
-				unit := BRANCH_UNIT;
-				branch_rs_v.op := branch_pack.JRLTE_op;
-				branch_rs_v.common := rs_common_3;
-			when STW_opc =>
-				unit := MEM_UNIT;
-				mem_rs_v.op := mem_pack.STORE_op;
-				mem_rs_v.has_dummy := '1';
-				mem_rs_v.common := (
-					ra => ra,
-					rb => rb,
-					state => RS_Waiting,
-					result => (others => '0'),
-					rob_num => r.rob.youngest,
-					pc => r.decode_result.pc,
-					pc_next => (others => '0')
-				);
-			when LDW_opc =>
-				unit := MEM_UNIT;
-				mem_rs_v.op := mem_pack.LOAD_op;
-				mem_rs_v.common := (
-					ra => ra,
-					rb => register_zero,
-					state => RS_Waiting,
-					result => (others => '0'),
-					rob_num => r.rob.youngest,
-					pc => r.decode_result.pc,
-					pc_next => (others => '0')
-				);
 			when NOP_opc =>
-				unit := NULL_UNIT;
-			when IN_opc =>
-				unit := MEM_UNIT;
-				mem_rs_v.op := mem_pack.IN_op;
-				mem_rs_v.has_dummy := '1';
-				mem_rs_v.common := (
-					ra => register_zero,
-					rb => register_zero,
-					state => RS_Waiting,
-					result => (others => '0'),
-					rob_num => r.rob.youngest,
-					pc => r.decode_result.pc,
-					pc_next => (others => '0')
-				);
-			when OUT_opc =>
-				unit := MEM_UNIT;
-				mem_rs_v.op := mem_pack.OUT_op;
-				mem_rs_v.has_dummy := '1';
-				mem_rs_v.common := (
-					ra => ra,
-					rb => register_zero,
-					state => RS_Waiting,
-					result => (others => '0'),
-					rob_num => r.rob.youngest,
-					pc => r.decode_result.pc,
-					pc_next => (others => '0')
-				);
-			when others =>
 			end case;
-			if r.decode_result.need_dummy_rob_entry = '1' then
-				unit := NULL_UNIT;
-				alu_rs_v := alu_pack.rs_zero;
-				fpu_rs_v := fpu_pack.rs_zero;
-				mem_rs_v := mem_pack.rs_zero;
-				branch_rs_v := branch_pack.rs_zero;
-			end if;
 			stall := rob_full(r.rob);
 			assert not stall report "rob full" severity note;
 			case unit is
@@ -945,33 +1134,18 @@ begin
 				mem_in_v.rs_in := mem_rs_v;
 				branch_in_v.rs_in := branch_rs_v;
 				if r.decode_result.opc /= NOP_opc then
-					if r.decode_result.need_dummy_rob_entry = '1' then
-						v.rob.rob_array(to_integer(unsigned(r.rob.youngest))) := (
-							state => ROB_Dummy,
-							taken => false,
-							opc => NOP_opc,
-							pc => r.decode_result.pc,
-							pc_next => r.decode_result.pc_predicted,
-							ghr => r.decode_result.ghr,
-							pht_entry => r.decode_result.pht_entry,
-							branch_target => r.decode_result.branch_target,
-							result => (others => '0'),
-							reg_num => reg_num_zero
-						);
-					else
-						v.rob.rob_array(to_integer(unsigned(r.rob.youngest))) := (
-							state => ROB_Executing,
-							taken => false,
-							opc => r.decode_result.opc,
-							pc => r.decode_result.pc,
-							pc_next => r.decode_result.pc_predicted,
-							ghr => r.decode_result.ghr,
-							pht_entry => r.decode_result.pht_entry,
-							branch_target => r.decode_result.branch_target,
-							result => (others => '0'),
-							reg_num => r.decode_result.rt
-						);
-					end if;
+					v.rob.rob_array(to_integer(unsigned(r.rob.youngest))) := (
+						state => ROB_Executing,
+						taken => false,
+						opc => r.decode_result.opc,
+						pc => r.decode_result.pc,
+						pc_next => r.decode_result.pc_predicted,
+						ghr => r.decode_result.ghr,
+						pht_entry => r.decode_result.pht_entry,
+						btb_entry => r.decode_result.btb_entry,
+						result => (others => '0'),
+						reg_num => r.decode_result.rt
+					);
 					if r.decode_result.rt /= reg_num_zero then
 						v.registers(to_integer(unsigned(r.decode_result.rt))).tag := (
 							valid => '1',
@@ -995,11 +1169,18 @@ begin
 			);
 			-- commit ROB
 			oldest_rob := r.rob.rob_array(to_integer(unsigned(v.rob.oldest)));
-			if oldest_rob.state = ROB_Dummy then
-				mem_in_v.dummy_done := '1';
-				v.rob.rob_array(to_integer(unsigned(v.rob.oldest))) := rob_zero;
-				v.rob.oldest := std_logic_vector(unsigned(v.rob.oldest) + 1);
-			elsif oldest_rob.state = ROB_Done then
+			if oldest_rob.state = ROB_Done then
+				case oldest_rob.opc is
+				when STWI_opc =>
+					mem_in_v.store_commit := '1';
+				when STW_opc =>
+					mem_in_v.store_commit := '1';
+				when IN_opc =>
+					mem_in_v.in_commit := '1';
+				when OUT_opc =>
+					mem_in_v.out_commit := '1';
+				when others =>
+				end case;
 				if oldest_rob.reg_num /= reg_num_zero then
 					assert v.registers(to_integer(unsigned(oldest_rob.reg_num))).tag.valid = '1' report "BUG @ register write reservation";
 					v.registers(to_integer(unsigned(oldest_rob.reg_num))).data := oldest_rob.result;
@@ -1009,16 +1190,14 @@ begin
 				end if;
 				v.rob.rob_array(to_integer(unsigned(v.rob.oldest))) := rob_zero;
 				v.rob.oldest := std_logic_vector(unsigned(v.rob.oldest) + 1);
---				commit_branch_predictor(oldest_rob, v.gshare, btb_we, btb_addr, btb_entry, v.gshare);
-				commit_branch_predictor(oldest_rob, btb_we, btb_addr_write, btb_din_v);
+				commit_branch_predictor(oldest_rob, btb_we, btb_addr_write, btb_din_v, pht_we, pht_addr_write, pht_din_v);
 			elsif oldest_rob.state = ROB_Reset then
 				report "rob reset" severity note;
 				if oldest_rob.reg_num /= reg_num_zero then
 					assert v.registers(to_integer(unsigned(oldest_rob.reg_num))).tag.valid = '1' report "BUG @ register write reservation";
 					v.registers(to_integer(unsigned(oldest_rob.reg_num))).data := oldest_rob.result;
 				end if;
---				commit_branch_predictor(oldest_rob, v.gshare, btb_we, btb_addr, btb_entry, v.gshare);
-				commit_branch_predictor(oldest_rob, btb_we, btb_addr_write, btb_din_v);
+				commit_branch_predictor(oldest_rob, btb_we, btb_addr_write, btb_din_v, pht_we, pht_addr_write, pht_din_v);
 				for i in v.registers'range loop
 					v.registers(i).tag := rs_tag_zero;
 				end loop;
@@ -1027,7 +1206,7 @@ begin
 					cdb => cdb_zero,
 					registers => v.registers,
 					pc => oldest_rob.pc_next,
-					ghr => ghr_next(oldest_rob.ghr, oldest_rob.taken), -- assuming branch misprediction
+					ghr => ghr_rollback(oldest_rob),
 					rob => rob_ring_buffer_zero,
 					state => CPU_NORMAL,
 					inst_valid => '0',
@@ -1056,6 +1235,9 @@ begin
 		btb_wea(0) <= btb_we;
 		btb_addra <= btb_addr_write;
 		btb_din <= btb_din_v;
+		pht_wea(0) <= pht_we;
+		pht_addra <= pht_addr_write;
+		pht_din <= pht_din_v;
 		go_pl <= go_pl_v;
 		alu_in <= alu_in_v;
 		fpu_in <= fpu_in_v;

@@ -43,84 +43,57 @@ begin
 	process(branch_in, r)
 		variable v : reg_type;
 		variable exec_done : boolean;
-		variable pc32 : std_logic_vector(31 downto 0);
+		variable ret_pc32 : std_logic_vector(31 downto 0);
+		variable ra_data : std_logic_vector(31 downto 0);
+		variable rb_data : std_logic_vector(31 downto 0);
+		variable rc_data : std_logic_vector(31 downto 0);
 	begin
 		v := r;
 		-- update rs
 		for i in r.rs'range loop
 			v.rs(i).common.ra := register_update(r.rs(i).common.ra, branch_in.cdb_in);
 			v.rs(i).common.rb := register_update(r.rs(i).common.rb, branch_in.cdb_in);
+			v.rs(i).common.rc := register_update(r.rs(i).common.rc, branch_in.cdb_in);
 		end loop;
 		-- execute
 		exec_done := false;
 		for i in v.rs'range loop
+			ra_data := v.rs(i).common.ra.data;
+			rb_data := v.rs(i).common.rb.data;
+			rc_data := v.rs(i).common.rc.data;
 			if rs_common_ready(v.rs(i).common) and not exec_done then
-				pc32 := std_logic_vector(unsigned((31-pc_width downto 0 => '0') & v.rs(i).common.pc) + 1);
+				ret_pc32 := std_logic_vector(unsigned((31-pc_width downto 0 => '0') & v.rs(i).common.pc) + 1);
 				case v.rs(i).op is
-					when J_op =>
-						v.rs(i).common.pc_next := std_logic_vector(signed(v.rs(i).common.pc) + signed(v.rs(i).common.ra.data(pc_width-1 downto 0)));
-						v.rs(i).taken := false;
-						v.rs(i).common.result := pc32;
-					when JR_op =>
-						v.rs(i).common.pc_next := v.rs(i).common.ra.data(pc_width-1 downto 0);
-						v.rs(i).taken := false;
-						v.rs(i).common.result := pc32;
-					when JREQ_op =>
-						if v.rs(i).common.ra.data = eq_const then
-							v.rs(i).common.pc_next := v.rs(i).common.rb.data(pc_width-1 downto 0);
+					when JF_op =>
+						if ra_data = (31 downto 0 => '0') then
+							v.rs(i).common.pc_next := rb_data(pc_width-1 downto 0);
+							v.rs(i).common.result := (others => '0');
 							v.rs(i).taken := true;
 						else
 							v.rs(i).common.pc_next := std_logic_vector(unsigned(v.rs(i).common.pc) + 1);
 							v.rs(i).taken := false;
 						end if;
-						v.rs(i).common.result := pc32;
-					when JRNEQ_op =>
-						if v.rs(i).common.ra.data /= eq_const then
-							v.rs(i).common.pc_next := v.rs(i).common.rb.data(pc_width-1 downto 0);
+					when C_op =>
+						v.rs(i).common.pc_next := ra_data(pc_width-1 downto 0);
+						v.rs(i).common.result := ret_pc32;
+						v.rs(i).taken := true;
+					when JC_op =>
+						if cmpc(v.rs(i).common.cond, ra_data, rb_data) then
+							v.rs(i).common.pc_next := rc_data(pc_width-1 downto 0);
 							v.rs(i).taken := true;
 						else
 							v.rs(i).common.pc_next := std_logic_vector(unsigned(v.rs(i).common.pc) + 1);
 							v.rs(i).taken := false;
 						end if;
-						v.rs(i).common.result := pc32;
-					when JRGT_op =>
-						if v.rs(i).common.ra.data = gt_const then
-							v.rs(i).common.pc_next := v.rs(i).common.rb.data(pc_width-1 downto 0);
+					when FJC_op =>
+						if fcmpc(v.rs(i).common.cond, ra_data, rb_data) then
+							v.rs(i).common.pc_next := rc_data(pc_width-1 downto 0);
 							v.rs(i).taken := true;
 						else
 							v.rs(i).common.pc_next := std_logic_vector(unsigned(v.rs(i).common.pc) + 1);
 							v.rs(i).taken := false;
 						end if;
-						v.rs(i).common.result := pc32;
-					when JRGTE_op =>
-						if v.rs(i).common.ra.data /= lt_const then
-							v.rs(i).common.pc_next := v.rs(i).common.rb.data(pc_width-1 downto 0);
-							v.rs(i).taken := true;
-						else
-							v.rs(i).common.pc_next := std_logic_vector(unsigned(v.rs(i).common.pc) + 1);
-							v.rs(i).taken := false;
-						end if;
-						v.rs(i).common.result := pc32;
-					when JRLT_op =>
-						if v.rs(i).common.ra.data = lt_const then
-							v.rs(i).common.pc_next := v.rs(i).common.rb.data(pc_width-1 downto 0);
-							v.rs(i).taken := true;
-						else
-							v.rs(i).common.pc_next := std_logic_vector(unsigned(v.rs(i).common.pc) + 1);
-							v.rs(i).taken := false;
-						end if;
-						v.rs(i).common.result := pc32;
-					when JRLTE_op =>
-						if v.rs(i).common.ra.data /= gt_const then
-							v.rs(i).common.pc_next := v.rs(i).common.rb.data(pc_width-1 downto 0);
-							v.rs(i).taken := true;
-						else
-							v.rs(i).common.pc_next := std_logic_vector(unsigned(v.rs(i).common.pc) + 1);
-							v.rs(i).taken := false;
-						end if;
-						v.rs(i).common.result := pc32;
 					when NOP_op =>
---					when others =>
 				end case;
 				v.rs(i).common.state := RS_Done;
 				exec_done := true;

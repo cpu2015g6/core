@@ -50,18 +50,21 @@ begin
 		variable v : reg_type;
 		variable ra_data : std_logic_vector(31 downto 0);
 		variable rb_data : std_logic_vector(31 downto 0);
+		variable rc_data : std_logic_vector(31 downto 0);
 	begin
 		v := r;
 		-- update rs
 		for i in r.rs'range loop
 			v.rs(i).common.ra := register_update(r.rs(i).common.ra, alu_in.cdb_in);
 			v.rs(i).common.rb := register_update(r.rs(i).common.rb, alu_in.cdb_in);
+			v.rs(i).common.rc := register_update(r.rs(i).common.rc, alu_in.cdb_in);
 		end loop;
 		-- execute
 		for i in v.rs'range loop
 			if rs_common_ready(v.rs(i).common) then
 				ra_data := v.rs(i).common.ra.data;
 				rb_data := v.rs(i).common.rb.data;
+				rc_data := v.rs(i).common.rc.data;
 				case v.rs(i).op is
 					when LIMM_op =>
 						v.rs(i).common.result := ra_data;
@@ -75,8 +78,6 @@ begin
 						v.rs(i).common.result := ra_data or rb_data;
 					when XOR_op =>
 						v.rs(i).common.result := ra_data xor rb_data;
-					when NOT_op =>
-						v.rs(i).common.result := not ra_data;
 					when SLL_op =>
 						if rb_data(31 downto 5) = (26 downto 0 => '0') then
 							v.rs(i).common.result := std_logic_vector(shift_left(unsigned(ra_data), to_integer(unsigned(rb_data(4 downto 0)))));
@@ -89,13 +90,29 @@ begin
 						else
 							v.rs(i).common.result := (others => '0');
 						end if;
-					when CMP_op =>
-						if signed(ra_data) > signed(rb_data) then
-							v.rs(i).common.result := gt_const;
-						elsif ra_data = rb_data then
-							v.rs(i).common.result := eq_const;
+					when CMPC_op =>
+						if cmpc(v.rs(i).common.cond, ra_data, rb_data) then
+							v.rs(i).common.result := (0 => '1', others => '0');
 						else
-							v.rs(i).common.result := lt_const;
+							v.rs(i).common.result := (others => '0');
+						end if;
+					when CMPAC_op =>
+						if cmpc(v.rs(i).common.cond, rb_data, rc_data) then
+							v.rs(i).common.result := (0 => ra_data(0), others => '0');
+						else
+							v.rs(i).common.result := (others => '0');
+						end if;
+					when FCMPC_op =>
+						if fcmpc(v.rs(i).common.cond, ra_data, rb_data) then
+							v.rs(i).common.result := (0 => '1', others => '0');
+						else
+							v.rs(i).common.result := (others => '0');
+						end if;
+					when FCMPAC_op =>
+						if fcmpc(v.rs(i).common.cond, rb_data, rc_data) then
+							v.rs(i).common.result := (0 => ra_data(0), others => '0');
+						else
+							v.rs(i).common.result := (others => '0');
 						end if;
 					when NOP_op =>
 --					when others =>

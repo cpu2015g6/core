@@ -79,7 +79,7 @@ component receiver is
 	);
 end component;
 -- FIFO
--- Standard FIFO
+-- First-Word Fall-Through FIFO
 -- width: 8
   component fifo8
     port (

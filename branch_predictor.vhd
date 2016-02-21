@@ -5,18 +5,6 @@ use work.common.all;
 
 package gshare_pack is
 --type pht_array_type is array (0 to 2**pht_array_width-1) of pht_entry_type;
---type btb_entry_type is record
---	valid : boolean;
---	tag : std_logic_vector(pc_width-pht_array_width-1 downto 0);
---	target : pc_type;
---end record;
---subtype btb_type is std_logic_vector(pc_width+pc_width-pht_array_width+1-1 downto 0);
---subtype btb_type is std_logic_vector(pc_width+2-1 downto 0);
---constant btb_entry_zero : btb_entry_type := (
---	false,
---	(others => '0'),
---	(others => '0')
---);
 --type btb_array_type is array (0 to 2**pht_array_width-1) of btb_entry_type;
 --type gshare_type is record
 --	pht_array : pht_array_type;
@@ -39,14 +27,15 @@ function pht_taken(pht_entry : pht_entry_type) return boolean;
 --function ghr_push(g : gshare_type;taken : boolean) return gshare_type;
 --function ghr_commit(g : gshare_type;taken : boolean) return gshare_type;
 --function btb_lookup(g : gshare_type;pc : pc_type) return btb_entry_type;
---function btb_decode(b : btb_type) return btb_entry_type;
---function btb_encode(b : btb_entry_type) return btb_type;
+function btb_hit(b : btb_entry_type;pc : pc_type) return boolean;
+function btb_decode(b : btb_type) return btb_entry_type;
+function btb_encode(b : btb_entry_type) return btb_type;
 --procedure btb_register(g : in gshare_type;pc : in pc_type;target : in pc_type; btb_we : out std_logic; btb_addr : out std_logic_vector(9 downto 0); btb_entry : out btb_entry_type);
 --procedure gshare_commit(g_in : in gshare_type;taken : in boolean;pc : in pc_type;target : in pc_type; btb_we : out std_logic; btb_addr : out std_logic_vector(pht_array_width-1 downto 0); btb_entry : out btb_entry_type; g_out : out gshare_type);
-procedure gshare_entry_decode(g : in gshare_entry_type; target : out pc_type; pht : out pht_entry_type);
-procedure gshare_entry_encode(target : in pc_type; pht : in pht_entry_type; g : out gshare_entry_type);
+--procedure gshare_entry_decode(g : in gshare_entry_type; target : out pc_type; pht : out pht_entry_type);
+--procedure gshare_entry_encode(target : in pc_type; pht : in pht_entry_type; g : out gshare_entry_type);
 function ghr_next(ghr : ghr_type; taken : boolean) return ghr_type;
-function gshare_commit(taken : boolean; pht_entry: pht_entry_type; target: pc_type) return gshare_entry_type;
+function pht_commit(taken : boolean; pht_entry: pht_entry_type) return pht_entry_type;
 end gshare_pack;
 
 package body gshare_pack is
@@ -125,24 +114,28 @@ end pht_taken;
 --	end if;
 --	return btb_entry;
 --end btb_lookup;
---function btb_decode(b : btb_type) return btb_entry_type is
---begin
---	return (
---		valid => b(pc_width+pc_width-pht_array_width) = '1',
---		tag => b(pc_width+pc_width-pht_array_width-1 downto pc_width),
---		target => b(pc_width-1 downto 0)
---	);
---end btb_decode;
---function btb_encode(b : btb_entry_type) return btb_type is
---	variable valid : std_logic;
---begin
---	if b.valid then
---		valid := '1';
---	else
---		valid := '0';
---	end if;
---	return valid & b.tag & b.target;
---end btb_encode;
+function btb_hit(b : btb_entry_type;pc : pc_type) return boolean is
+begin
+	return b.valid and b.tag = pc(pc_width-1 downto pht_array_width);
+end btb_hit;
+function btb_decode(b : btb_type) return btb_entry_type is
+begin
+	return (
+		valid => b(pc_width+pc_width-pht_array_width) = '1',
+		tag => b(pc_width+pc_width-pht_array_width-1 downto pc_width),
+		target => b(pc_width-1 downto 0)
+	);
+end btb_decode;
+function btb_encode(b : btb_entry_type) return btb_type is
+	variable valid : std_logic;
+begin
+	if b.valid then
+		valid := '1';
+	else
+		valid := '0';
+	end if;
+	return valid & b.tag & b.target;
+end btb_encode;
 --procedure btb_register(g : in gshare_type;pc : in pc_type;target : in pc_type; btb_we : out std_logic; btb_addr : out std_logic_vector(9 downto 0); btb_entry : out btb_entry_type) is
 --begin
 --	btb_we := '1';
@@ -171,15 +164,15 @@ end pht_taken;
 --	end if;
 --	g_out := v;
 --end gshare_commit;
-procedure gshare_entry_decode(g : in gshare_entry_type; target : out pc_type; pht : out pht_entry_type) is
-begin
-	target := g(pc_width-1 downto 0);
-	pht := g(pc_width+1 downto pc_width);
-end gshare_entry_decode;
-procedure gshare_entry_encode(target : in pc_type; pht : in pht_entry_type; g : out gshare_entry_type) is
-begin
-	g := pht & target;
-end gshare_entry_encode;
+--procedure gshare_entry_decode(g : in gshare_entry_type; target : out pc_type; pht : out pht_entry_type) is
+--begin
+--	target := g(pc_width-1 downto 0);
+--	pht := g(pc_width+1 downto pc_width);
+--end gshare_entry_decode;
+--procedure gshare_entry_encode(target : in pc_type; pht : in pht_entry_type; g : out gshare_entry_type) is
+--begin
+--	g := pht & target;
+--end gshare_entry_encode;
 function ghr_next(ghr : ghr_type; taken : boolean) return ghr_type is
 begin
 	if taken then
@@ -188,14 +181,12 @@ begin
 		return ghr(ghr'length-2 downto 0) & '0';
 	end if;
 end ghr_next;
-function gshare_commit(taken : boolean; pht_entry: pht_entry_type; target: pc_type) return gshare_entry_type is
-	variable g : gshare_entry_type;
+function pht_commit(taken : boolean; pht_entry: pht_entry_type) return pht_entry_type is
 begin
 	if taken then
-		gshare_entry_encode(target, saturated_increment(pht_entry), g);
+		return saturated_increment(pht_entry);
 	else
-		gshare_entry_encode(target, saturated_decrement(pht_entry), g);
+		return saturated_decrement(pht_entry);
 	end if;
-	return g;
-end gshare_commit;
+end pht_commit;
 end gshare_pack;

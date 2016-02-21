@@ -1,5 +1,6 @@
 library ieee;
 use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 package common is
 	constant pht_array_width : integer := 10;
 	subtype ghr_type is std_logic_vector(pht_array_width-1 downto 0);
@@ -14,12 +15,46 @@ package common is
 	constant reg_num_width : integer := 5;
 	subtype reg_num_type is std_logic_vector(reg_num_width-1 downto 0);
 	constant reg_num_zero : reg_num_type := (others => '1');
-	type opc_type is (NOP_opc, LIMM_opc, CMP_opc, IN_opc, OUT_opc, J_opc, JR_opc, JREQ_opc, JRNEQ_opc, JRGT_opc, JRGTE_opc, JRLT_opc, JRLTE_opc, STW_opc, LDW_opc, ADD_opc, SUB_opc, AND_opc, OR_opc, XOR_opc, NOT_opc, SLL_opc, SRL_opc, FADD_opc, FMUL_opc, FINV_opc, FSQRT_opc, FCMP_opc);
+	type opc_type is (
+	NOP_opc,
+	LIMM_opc,
+	IN_opc,
+	OUT_opc,
+	STWI_opc,
+	LDWI_opc,
+	JIF_opc,
+	CI_opc,
+	ADDI_opc,
+	SUBI_opc,
+	CMPIC_opc,
+	CMPAIC_opc,
+	JIC_opc,
+	FJIC_opc,
+	CMPC_opc,
+	FCMPC_opc,
+	CMPAC_opc,
+	FCMPAC_opc,
+	JRC_opc,
+	FJRC_opc,
+	JRF_opc,
+	CR_opc,
+	STW_opc,
+	LDW_opc,
+	ADD_opc,
+	SUB_opc,
+	AND_opc,
+	OR_opc,
+	XOR_opc,
+	SLL_opc,
+	SRL_opc,
+	FADD_opc,
+	FSUB_opc,
+	FMUL_opc,
+	FINV_opc,
+	FABA_opc,
+	FSQRT_opc
+	);
 	type unit_type is (ALU_UNIT, FPU_UNIT, MEM_UNIT, BRANCH_UNIT, NULL_UNIT);
-	constant gt_const : std_logic_vector(31 downto 0) := x"00000002";
-	constant eq_const : std_logic_vector(31 downto 0) := x"00000001";
-	constant lt_const : std_logic_vector(31 downto 0) := x"00000000";
-	subtype gshare_entry_type is std_logic_vector(pc_width+2-1 downto 0);
 	-- reservation station
 	type rs_tag_type is record
 		valid : std_logic;
@@ -29,25 +64,40 @@ package common is
 		'0',
 		(others => '0')
 	);
+	subtype cond_type is std_logic_vector(2 downto 0);
+	subtype word_type is std_logic_vector(31 downto 0);
+	function cmpc(cond : cond_type; a : word_type; b : word_type) return boolean;
+	function fcmpc(cond : cond_type; a : word_type; b : word_type) return boolean;
+	type btb_entry_type is record
+		valid : boolean;
+		tag : std_logic_vector(pc_width-pht_array_width-1 downto 0);
+		target : pc_type;
+	end record;
+	subtype btb_type is std_logic_vector(pc_width+pc_width-pht_array_width+1-1 downto 0);
+	constant btb_entry_zero : btb_entry_type := (
+		false,
+		(others => '0'),
+		(others => '0')
+	);
 	type decode_result_type is record
 		opc : opc_type;
-		rt, ra, rb : reg_num_type;
+		cond : cond_type;
+		rt, ra, rb, rc : reg_num_type;
 		imm : std_logic_vector(15 downto 0);
 		pc, pc_predicted : pc_type;
 		ghr : ghr_type;
 		pht_entry : pht_entry_type;
-		branch_target : pc_type;
-		need_dummy_rob_entry : std_logic;
+		btb_entry : btb_entry_type;
 	end record;
 	constant decode_result_zero : decode_result_type := (
 		NOP_opc,
-		reg_num_zero, reg_num_zero, reg_num_zero,
+		(others => '0'),
+		reg_num_zero, reg_num_zero, reg_num_zero, reg_num_zero,
 		(others => '0'),
 		(others => '0'), (others => '0'),
 		(others => '0'),
 		pht_entry_zero,
-		(others => '0'),
-		'0'
+		btb_entry_zero
 	);
 	type register_type is record
 		data : std_logic_vector(31 downto 0);
@@ -75,14 +125,16 @@ package common is
 	type rs_state_type is (RS_Invalid, RS_Waiting, RS_Executing, RS_Done, RS_Reserved);
 	type rs_common_type is record
 		state : rs_state_type;
-		ra, rb : register_type;
+		ra, rb, rc : register_type;
+		cond : cond_type;
 		result : std_logic_vector(31 downto 0);
 		rob_num : rob_num_type;
 		pc, pc_next : pc_type;
 	end record;
 	constant rs_common_zero : rs_common_type := (
 		RS_Invalid,
-		register_zero, register_zero,
+		register_zero, register_zero, register_zero,
+		(others => '0'),
 		(others => '0'),
 		(others => '0'),
 		(others => '0'), (others => '0')
@@ -92,7 +144,7 @@ package common is
 	-- ROB_Done : The result is available
 	-- ROB_Reset : CPU enters rollback mode due to a mispredicted branch and restarts execution from pc_next
 	-- Distinguishing faults, traps and aborts may be needed.
-	type rob_state_type is (ROB_Invalid, ROB_Executing, ROB_Done, ROB_Reset, ROB_Dummy);
+	type rob_state_type is (ROB_Invalid, ROB_Executing, ROB_Done, ROB_Reset);
 	type rob_type is record
 		state : rob_state_type;
 		taken : boolean;
@@ -100,7 +152,7 @@ package common is
 		pc, pc_next : pc_type;
 		ghr : ghr_type;
 		pht_entry : pht_entry_type;
-		branch_target : pc_type;
+		btb_entry : btb_entry_type;
 		result : std_logic_vector(31 downto 0);
 		reg_num : reg_num_type;
 	end record;
@@ -111,7 +163,7 @@ package common is
 		(others => '0'), (others => '0'),
 		(others => '0'),
 		pht_entry_zero,
-		(others => '0'),
+		btb_entry_zero,
 		(others => '0'),
 		(others => '0')
 	);
@@ -178,6 +230,38 @@ package common is
 end common;
 
 package body common is
+	function cmpc(cond : cond_type; a : word_type; b : word_type) return boolean is
+	variable c : std_logic;
+	begin
+		if signed(a) > signed(b) then
+			c := cond(2);
+		elsif a = b then
+			c := cond(1);
+		else
+			c := cond(0);
+		end if;
+		return c = '1';
+	end cmpc;
+	function fcmpc(cond : cond_type; a : word_type; b : word_type) return boolean is
+	variable c : std_logic;
+	begin
+		if a(30 downto 0) = (30 downto 0 => '0') and b(30 downto 0) = (30 downto 0 => '0') then
+			c := cond(1);
+		elsif a(31) = '0' and b(31) = '1' then
+			c := cond(2);
+		elsif a(31) = '1' and b(31) = '0' then
+			c := cond(0);
+		else
+			if a = b then
+				c := cond(1);
+			elsif (a(31) = '1') xor (unsigned(a(30 downto 0)) < unsigned(b(30 downto 0))) then
+				c := cond(0);
+			else
+				c := cond(2);
+			end if;
+		end if;
+		return c = '1';
+	end fcmpc;
 	function rs_common_ready(r : rs_common_type) return boolean is
 	begin
 		return r.state = RS_Waiting and r.ra.tag.valid = '0' and r.rb.tag.valid = '0';
@@ -210,7 +294,7 @@ library ieee;
 use ieee.std_logic_1164.all;
 use work.common.all;
 package alu_pack is
-	type op_type is (LIMM_op, CMP_op, ADD_op, SUB_op, AND_op, OR_op, XOR_op, NOT_op, SLL_op, SRL_op, NOP_op);
+	type op_type is (LIMM_op, CMPC_op, FCMPC_op, CMPAC_op, FCMPAC_op, ADD_op, SUB_op, AND_op, OR_op, XOR_op, SLL_op, SRL_op, NOP_op);
 	type rs_type is record
 		op : op_type;
 		common : rs_common_type;
@@ -246,7 +330,7 @@ library ieee;
 use ieee.std_logic_1164.all;
 use work.common.all;
 package fpu_pack is
-	type op_type is (FADD_op, FMUL_op, FINV_op, FSQRT_op, FCMP_op, NOP_op);
+	type op_type is (FADD_op, FSUB_op, FMUL_op, FINV_op, FABA_op, FSQRT_op, NOP_op);
 	type rs_type is record
 		op : op_type;
 		countdown : std_logic_vector(2 downto 0);
@@ -449,22 +533,14 @@ use ieee.std_logic_1164.all;
 use work.common.all;
 use work.cache_pack.all;
 package mem_pack is
---	type op_type is (IN_op, OUT_op, LOAD_op, STORE_op, NOP_op);
-	subtype op_type is std_logic_vector(2 downto 0);
-	constant LOAD_op : op_type := "001";
-	constant STORE_op : op_type := "010";
-	constant IN_op : op_type := "011";
-	constant OUT_op : op_type := "100";
-	constant NOP_op : op_type := "000";
+	type op_type is (IN_op, OUT_op, LDW_op, STW_op, NOP_op);
 	type rs_type is record
 		op : op_type;
-		has_dummy : std_logic;
 		common : rs_common_type;
 		id : id_type;
 	end record;
 	constant rs_zero : rs_type := (
 		NOP_op,
-		'0',
 		rs_common_zero,
 		(others => '0')
 	);
@@ -474,7 +550,7 @@ package mem_pack is
 		cdb_in : cdb_type;
 		cdb_next : std_logic;-- set cdb_next = 1 when cdb_out is broadcasted
 		rst : std_logic;-- synchronous reset
-		dummy_done : std_logic;
+		store_commit, out_commit, in_commit : std_logic;
 		sramifout : sramif_out;
 		recvifout : recvif_out_type;
 		transifout : transif_out_type;
@@ -483,7 +559,7 @@ package mem_pack is
 		rs_zero,
 		cdb_zero,
 		'0',
-		'0',
+		'0', '0', '0',
 		'0',
 		sramif_out_zero,
 		recvif_out_zero,
@@ -509,7 +585,7 @@ library ieee;
 use ieee.std_logic_1164.all;
 use work.common.all;
 package branch_pack is
-	type op_type is (J_op, JR_op, JREQ_op, JRNEQ_op, JRGT_op, JRGTE_op, JRLT_op, JRLTE_op, NOP_op);
+	type op_type is (JF_op, JC_op, FJC_op, C_op, NOP_op);
 	type rs_type is record
 		op : op_type;
 		taken : boolean;
