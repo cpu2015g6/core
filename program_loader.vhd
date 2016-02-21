@@ -23,7 +23,7 @@ architecture twoproc of program_loader is
 		bram_size, sram_size : std_logic_vector(31 downto 0);
 		addr : std_logic_vector(31 downto 0);
 		state : state_type;
-		rd_en : std_logic;
+		write_go : std_logic;
 		buf : std_logic_vector(31 downto 0);
 		read_count : std_logic_vector(1 downto 0);
 	end record;
@@ -53,42 +53,48 @@ begin
 		variable bram_addr_v : std_logic_vector(pc_width-1 downto 0);
 		variable bram_din_v : std_logic_vector(31 downto 0);
 		variable sramifin_v : sramif_in;
+		variable rd_en : std_logic;
 	begin
 		v := r;
 		bram_we_v := '0';
 		bram_addr_v := (others => '0');
 		bram_din_v := (others => '0');
 		sramifin_v := sramif_in_zero;
+		rd_en := '0';
 		if r.state /= IDLE then
 			if recvifout.empty = '0' then
-				v.rd_en := '1';
-			else
-				v.rd_en := '0';
-			end if;
-			if r.rd_en = '1' then
+				rd_en := '1';
 				v.buf := r.buf(23 downto 0) & recvifout.dout;
 				v.read_count := std_logic_vector(unsigned(r.read_count) + 1);
+				if v.read_count = "00" then
+					v.write_go := '1';
+				end if;
+			else
+				rd_en := '0';
 			end if;
 		end if;
-		recvifin <= (rd_en => v.rd_en);
+		recvifin <= (rd_en => rd_en);
 		case r.state is
 		when IDLE =>
 			if go = '1' then
 				v.state := LOAD_HEADER_B;
 			end if;
 		when LOAD_HEADER_B =>
-			if r.rd_en = '1' and r.read_count = "11" then
+			if r.write_go = '1' then
+				v.write_go := '0';
 				v.bram_size := v.buf;
 				v.state := LOAD_HEADER_S;
 			end if;
 		when LOAD_HEADER_S =>
-			if r.rd_en = '1' and r.read_count = "11" then
+			if r.write_go = '1' then
+				v.write_go := '0';
 				v.sram_size := v.buf;
 				v.state := LOAD_BRAM;
 				v.addr := (others => '0');
 			end if;
 		when LOAD_BRAM =>
-			if r.rd_en = '1' and r.read_count = "11" then
+			if r.write_go = '1' then
+				v.write_go := '0';
 				bram_we_v := '1';
 				bram_addr_v := r.addr(pc_width-1 downto 0);
 				v.addr := std_logic_vector(unsigned(r.addr) + 1);
@@ -99,7 +105,8 @@ begin
 				v.addr := (others => '0');
 			end if;
 		when LOAD_SRAM =>
-			if r.rd_en = '1' and r.read_count = "11" then
+			if r.write_go = '1' then
+				v.write_go := '0';
 				sramifin_v := (
 					op => SRAM_STORE,
 					addr => std_logic_vector(unsigned(sram_head_addr) + unsigned(r.addr(19 downto 0))),

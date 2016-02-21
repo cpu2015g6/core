@@ -503,6 +503,7 @@ architecture twoproc of cpu_top is
 		alias rb : std_logic_vector(4 downto 0) is inst(9 downto 5);
 		alias rc : std_logic_vector(4 downto 0) is inst(4 downto 0);
 	begin
+		decode_result := decode_result_zero;
 		case opc is
 		when "00000000000000000" =>
 			decode_result.opc := JRF_opc;
@@ -965,6 +966,7 @@ begin
 			when IN_opc =>
 				unit := MEM_UNIT;
 				mem_rs_v.op := mem_pack.IN_op;
+				mem_rs_v.common := rs_common_3;
 			when STWI_opc =>
 				unit := MEM_UNIT;
 				mem_rs_v.op := mem_pack.STW_op;

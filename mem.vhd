@@ -322,16 +322,17 @@ begin
 						v.rs(exec_i).common.state := RS_Done;
 						v.rs(exec_i).common.pc_next := std_logic_vector(unsigned(t.pc) + 1);
 						v.rs(exec_i).common.result := x"000000" & mem_in.recvifout.dout;
+						v.in_valid := false;
 					else
 						exec_complete := false;
 					end if;
 				when OUT_op =>
 					if is_out_buffer_full(v.out_buffer) then
+						exec_complete := false;
+					else
 						v.rs(exec_i).common.state := RS_Done;
 						v.rs(exec_i).common.pc_next := std_logic_vector(unsigned(t.pc) + 1);
 						v.out_buffer := push_out_buffer(v.out_buffer, t.ra.data(7 downto 0));
-					else
-						exec_complete := false;
 					end if;
 				when NOP_op =>
 --				when others =>
@@ -361,13 +362,13 @@ begin
 			end if;
 		end if;
 		if mem_in.store_commit = '1' then
-			v.store_buffer := set_commit_ready_store_buffer(r.store_buffer);
+			v.store_buffer := set_commit_ready_store_buffer(v.store_buffer);
 		end if;
 		if mem_in.out_commit = '1' then
-			v.out_buffer := set_commit_ready_out_buffer(r.out_buffer);
+			v.out_buffer := set_commit_ready_out_buffer(v.out_buffer);
 		end if;
 		if mem_in.in_commit = '1' then
-			assert not r.in_valid report "BUG @ r.in_valid";
+--			assert not r.in_valid report "BUG @ r.in_valid";
 			v.in_valid := true;
 			recvifin_v := (rd_en => '1');
 		end if;
