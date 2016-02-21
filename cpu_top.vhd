@@ -379,8 +379,8 @@ architecture twoproc of cpu_top is
 			decode_result.imm := imm;
 		when "000010" =>
 			decode_result.opc := LDWI_opc;
-			decode_result.ra := ra;
-			decode_result.rb := rb;
+			decode_result.rt := ra;
+			decode_result.ra := rb;
 			decode_result.imm := imm;
 		when "000011" =>
 			decode_result.opc := JIF_opc;
@@ -639,31 +639,100 @@ architecture twoproc of cpu_top is
 			return reg;
 		end if;
 	end read_reg;
+	function cdb_arbiter_priority(cdb_out : cdb_type; rob_oldest : rob_num_type) return rob_num_type is
+	begin
+		if cdb_out.tag.valid = '1' then
+			return std_logic_vector(unsigned(cdb_out.tag.rob_num) - unsigned(rob_oldest));
+		else
+			return (others => '1');
+		end if;
+	end cdb_arbiter_priority;
 	procedure cdb_arbiter(
+		rob_oldest : in rob_num_type;
 		alu_cdb_out, fpu_cdb_out, mem_cdb_out, branch_cdb_out : in cdb_type;
 		alu_grant, fpu_grant, mem_grant, branch_grant : out std_logic;
 		cdb : out cdb_type
 	) is
+		variable unit : unit_type;
+		variable priority_alu : rob_num_type;
+		variable priority_fpu : rob_num_type;
+		variable priority_mem : rob_num_type;
+		variable priority_branch : rob_num_type;
+		variable priority_alu_fpu : rob_num_type;
+		variable priority_mem_branch : rob_num_type;
+		variable alu_fpu, mem_branch : std_logic;
 	begin
 		alu_grant := '0';
 		fpu_grant := '0';
 		mem_grant := '0';
 		branch_grant := '0';
-		if alu_cdb_out.tag.valid = '1' then
+		unit := NULL_UNIT;
+		priority_alu := cdb_arbiter_priority(alu_cdb_out, rob_oldest);
+		priority_fpu := cdb_arbiter_priority(fpu_cdb_out, rob_oldest);
+		priority_mem := cdb_arbiter_priority(mem_cdb_out, rob_oldest);
+		priority_branch := cdb_arbiter_priority(branch_cdb_out, rob_oldest);
+		if unsigned(priority_alu) < unsigned(priority_fpu) then
+			alu_fpu := '0';
+			priority_alu_fpu := priority_alu;
+		else
+			alu_fpu := '1';
+			priority_alu_fpu := priority_fpu;
+		end if;
+		if unsigned(priority_mem) < unsigned(priority_branch) then
+			mem_branch := '0';
+			priority_mem_branch := priority_mem;
+		else
+			mem_branch := '1';
+			priority_mem_branch := priority_branch;
+		end if;
+		if unsigned(priority_alu_fpu) < unsigned(priority_mem_branch) then
+			if alu_fpu = '0' then
+				unit := ALU_UNIT;
+			else
+				unit := FPU_UNIT;
+			end if;
+		else
+			if mem_branch = '0' then
+				unit := MEM_UNIT;
+			else
+				unit := BRANCH_UNIT;
+			end if;
+		end if;
+		case unit is
+		when ALU_UNIT =>
+			if alu_cdb_out.tag.valid = '0' then
+				unit := NULL_UNIT;
+			end if;
+		when FPU_UNIT =>
+			if fpu_cdb_out.tag.valid = '0' then
+				unit := NULL_UNIT;
+			end if;
+		when MEM_UNIT =>
+			if mem_cdb_out.tag.valid = '0' then
+				unit := NULL_UNIT;
+			end if;
+		when BRANCH_UNIT =>
+			if branch_cdb_out.tag.valid = '0' then
+				unit := NULL_UNIT;
+			end if;
+		when NULL_UNIT =>
+		end case;
+		case unit is
+		when ALU_UNIT =>
 			alu_grant := '1';
 			cdb := alu_cdb_out;
-		elsif fpu_cdb_out.tag.valid = '1' then
+		when FPU_UNIT =>
 			fpu_grant := '1';
 			cdb := fpu_cdb_out;
-		elsif mem_cdb_out.tag.valid = '1' then
+		when MEM_UNIT =>
 			mem_grant := '1';
 			cdb := mem_cdb_out;
-		elsif branch_cdb_out.tag.valid = '1' then
+		when BRANCH_UNIT =>
 			branch_grant := '1';
 			cdb := branch_cdb_out;
-		else
+		when NULL_UNIT =>
 			cdb := cdb_zero;
-		end if;
+		end case;
 	end cdb_arbiter;
 	function update_ROB(rob_array : rob_array_type;cdb : cdb_type) return rob_array_type is
 		variable new_rob_array : rob_array_type;
@@ -1159,6 +1228,7 @@ begin
 			end if;
 			assert not stall report "stall" severity note;
 			cdb_arbiter(
+				rob_oldest => v.rob.oldest,
 				alu_cdb_out => alu_out.cdb_out,
 				fpu_cdb_out => fpu_out.cdb_out,
 				mem_cdb_out => mem_out.cdb_out,
