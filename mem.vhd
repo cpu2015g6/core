@@ -41,7 +41,7 @@ architecture twoproc of mem is
 	begin
 		ind := -1;
 		for i in 0 to sb'length-1 loop
-			if sb(i).addr = addr then
+			if sb(i).valid and sb(i).addr = addr then
 				ind := i;
 			end if;
 		end loop;
@@ -285,59 +285,53 @@ begin
 		exec_i := to_integer(unsigned(r.rs_exec));
 		t := r.rs(exec_i).common;
 		if rs_common_ready(t) then
---			if r.rs(exec_i).has_dummy = '0' or r.dummy_done = '1' then
-				exec_complete := true;
---			else
---				exec_complete := false;
---			end if;
-			if exec_complete then
-				case r.rs(exec_i).op is
-				when LDW_op =>
-					addr := std_logic_vector(unsigned(t.ra.data(19 downto 0)) + unsigned(t.rb.data(19 downto 0)));
-					ind := search_store_buffer(r.store_buffer, addr);
-					if ind /= -1 then
-						v.rs(exec_i).common.state := RS_Done;
-						v.rs(exec_i).common.result := r.store_buffer(ind).wd;
-						v.rs(exec_i).common.pc_next := std_logic_vector(unsigned(t.pc) + 1);
-					elsif cache_busy = '0' then
-						v.rs(exec_i).common.state := RS_Executing;
-						v.rs(exec_i).id := id;
-						v.countdown(exec_i) := "000";
-						cache_op_v := READ_cache_op;
-						cache_addr_v := addr;
-						cache_used := true;
-					else
-						exec_complete := false;
-					end if;
-				when STW_op =>
-					if is_store_buffer_full(r.store_buffer) then
-						exec_complete := false;
-					else
-						v.rs(exec_i).common.state := RS_Done;
-						v.rs(exec_i).common.pc_next := std_logic_vector(unsigned(t.pc) + 1);
-						v.store_buffer := push_store_buffer(v.store_buffer, std_logic_vector(unsigned(t.ra.data(19 downto 0)) + unsigned(t.rc.data(19 downto 0))), t.rb.data);
-					end if;
-				when IN_op =>
-					if r.in_valid and mem_in.recvifout.empty = '0' then
-						v.rs(exec_i).common.state := RS_Done;
-						v.rs(exec_i).common.pc_next := std_logic_vector(unsigned(t.pc) + 1);
-						v.rs(exec_i).common.result := x"000000" & mem_in.recvifout.dout;
-						v.in_valid := false;
-					else
-						exec_complete := false;
-					end if;
-				when OUT_op =>
-					if is_out_buffer_full(v.out_buffer) then
-						exec_complete := false;
-					else
-						v.rs(exec_i).common.state := RS_Done;
-						v.rs(exec_i).common.pc_next := std_logic_vector(unsigned(t.pc) + 1);
-						v.out_buffer := push_out_buffer(v.out_buffer, t.ra.data(7 downto 0));
-					end if;
-				when NOP_op =>
---				when others =>
-				end case;
-			end if;
+			exec_complete := true;
+			case r.rs(exec_i).op is
+			when LDW_op =>
+				addr := std_logic_vector(unsigned(t.ra.data(19 downto 0)) + unsigned(t.rb.data(19 downto 0)));
+				ind := search_store_buffer(r.store_buffer, addr);
+				if ind /= -1 then
+					v.rs(exec_i).common.state := RS_Done;
+					v.rs(exec_i).common.result := r.store_buffer(ind).wd;
+					v.rs(exec_i).common.pc_next := std_logic_vector(unsigned(t.pc) + 1);
+				elsif cache_busy = '0' then
+					v.rs(exec_i).common.state := RS_Executing;
+					v.rs(exec_i).id := id;
+					v.countdown(exec_i) := "000";
+					cache_op_v := READ_cache_op;
+					cache_addr_v := addr;
+					cache_used := true;
+				else
+					exec_complete := false;
+				end if;
+			when STW_op =>
+				if is_store_buffer_full(r.store_buffer) then
+					exec_complete := false;
+				else
+					v.rs(exec_i).common.state := RS_Done;
+					v.rs(exec_i).common.pc_next := std_logic_vector(unsigned(t.pc) + 1);
+					v.store_buffer := push_store_buffer(v.store_buffer, std_logic_vector(unsigned(t.ra.data(19 downto 0)) + unsigned(t.rc.data(19 downto 0))), t.rb.data);
+				end if;
+			when IN_op =>
+				if r.in_valid and mem_in.recvifout.empty = '0' then
+					v.rs(exec_i).common.state := RS_Done;
+					v.rs(exec_i).common.pc_next := std_logic_vector(unsigned(t.pc) + 1);
+					v.rs(exec_i).common.result := x"000000" & mem_in.recvifout.dout;
+					v.in_valid := false;
+				else
+					exec_complete := false;
+				end if;
+			when OUT_op =>
+				if is_out_buffer_full(v.out_buffer) then
+					exec_complete := false;
+				else
+					v.rs(exec_i).common.state := RS_Done;
+					v.rs(exec_i).common.pc_next := std_logic_vector(unsigned(t.pc) + 1);
+					v.out_buffer := push_out_buffer(v.out_buffer, t.ra.data(7 downto 0));
+				end if;
+			when NOP_op =>
+--			when others =>
+			end case;
 			if exec_complete then
 				v.rs_exec := std_logic_vector(unsigned(r.rs_exec) + 1);
 			end if;

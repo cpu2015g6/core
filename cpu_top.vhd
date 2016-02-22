@@ -385,7 +385,8 @@ architecture twoproc of cpu_top is
 		when "000011" =>
 			decode_result.opc := JIF_opc;
 			decode_result.rt := ra;
-			decode_result.ra := rb;
+			decode_result.ra := ra;
+			decode_result.rb := rb;
 			decode_result.imm := imm;
 		when "000100" =>
 			decode_result.opc := CI_opc;
@@ -508,8 +509,9 @@ architecture twoproc of cpu_top is
 		when "00000000000000000" =>
 			decode_result.opc := JRF_opc;
 			decode_result.rt := ra;
-			decode_result.ra := rb;
-			decode_result.rb := rc;
+			decode_result.ra := ra;
+			decode_result.rb := rb;
+			decode_result.rc := rc;
 		when "00000000000000001" =>
 			decode_result.opc := CR_opc;
 			decode_result.rt := ra;
@@ -1050,7 +1052,7 @@ begin
 				unit := BRANCH_UNIT;
 				branch_rs_v.op := branch_pack.JF_op;
 				branch_rs_v.common := rs_common_3;
-				branch_rs_v.common.rb := zext_imm;
+				branch_rs_v.common.rc := zext_imm;
 			when CI_opc =>
 				unit := BRANCH_UNIT;
 				branch_rs_v.op := branch_pack.C_op;
