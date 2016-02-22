@@ -65,13 +65,13 @@ begin
 				ret_pc32 := std_logic_vector(unsigned((31-pc_width downto 0 => '0') & v.rs(i).common.pc) + 1);
 				case v.rs(i).op is
 					when JF_op =>
-						if rb_data = (31 downto 0 => '0') then
-							v.rs(i).common.pc_next := rc_data(pc_width-1 downto 0);
+						if ra_data = (31 downto 0 => '0') then
+							v.rs(i).common.pc_next := rb_data(pc_width-1 downto 0);
 							v.rs(i).common.result := (others => '0');
 							v.rs(i).taken := true;
 						else
 							v.rs(i).common.pc_next := std_logic_vector(unsigned(v.rs(i).common.pc) + 1);
---							v.rs(i).common.result := ra_data;
+							v.rs(i).common.result := rc_data;
 							v.rs(i).taken := false;
 						end if;
 					when C_op =>
