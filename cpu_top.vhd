@@ -931,7 +931,7 @@ begin
 			r <= r_in;
 		end if;
 	end process;
-	comb : process(r, alu_out, fpu_out, mem_out, branch_out, bram_dout, cpu_top_in, active_pl)
+	comb : process(r, alu_out, fpu_out, mem_out, branch_out, bram_dout, cpu_top_in, active_pl, btb_dout, pht_dout)
 		variable v : reg_type;
 		variable alu_in_v : alu_pack.in_type;
 		variable fpu_in_v : fpu_pack.in_type;

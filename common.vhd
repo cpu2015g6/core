@@ -264,7 +264,7 @@ package body common is
 	end fcmpc;
 	function rs_common_ready(r : rs_common_type) return boolean is
 	begin
-		return r.state = RS_Waiting and r.ra.tag.valid = '0' and r.rb.tag.valid = '0';
+		return r.state = RS_Waiting and r.ra.tag.valid = '0' and r.rb.tag.valid = '0' and r.rc.tag.valid = '0';
 	end rs_common_ready;
 	function register_update(reg : register_type; cdb : cdb_type) return register_type is
 		variable v : register_type;
